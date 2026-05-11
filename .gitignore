@@ -1,0 +1,15 @@
+.pio/
+.vscode/
+build/
+dist/
+.aws-sam/
+*.o
+*.a
+*.so
+*.pyc
+__pycache__/
+.env
+.env.local
+credentials.json
+.DS_Store
+Thumbs.db

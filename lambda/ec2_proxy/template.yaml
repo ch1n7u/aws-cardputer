@@ -1,0 +1,138 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Description: EC2 proxy Lambda to list/start/stop instances for Cardputer device
+
+Resources:
+  Ec2ProxyApi:
+    Type: AWS::Serverless::Api
+    Properties:
+      StageName: Prod
+      MethodSettings:
+        - HttpMethod: "*"
+          ResourcePath: "/*"
+          ThrottlingRateLimit: 5
+          ThrottlingBurstLimit: 10
+
+  Ec2ProxyFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      Handler: handler.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      Environment:
+        Variables:
+          ADMIN_TOKEN: !Ref AdminToken
+          PAIR_CODE: !Ref PairCode
+          TOKEN_SIGNING_KEY: !Ref TokenSigningKey
+          DEVICE_TABLE_NAME: !Ref DeviceSessionTable
+          ACCESS_TTL_SECONDS: !Ref AccessTtlSeconds
+          REFRESH_TTL_SECONDS: !Ref RefreshTtlSeconds
+      Policies:
+        - Version: "2012-10-17"
+          Statement:
+            - Sid: Ec2Describe
+              Effect: Allow
+              Action:
+                - ec2:DescribeInstances
+              Resource: "*"
+            - Sid: Ec2PowerControl
+              Effect: Allow
+              Action:
+                - ec2:StartInstances
+                - ec2:StopInstances
+              Resource: !If
+                - UseRestrictedInstances
+                - !Split [",", !Ref AllowedInstanceArns]
+                - "*"
+            - Sid: DeviceSessionTableAccess
+              Effect: Allow
+              Action:
+                - dynamodb:GetItem
+                - dynamodb:PutItem
+                - dynamodb:DeleteItem
+              Resource: !GetAtt DeviceSessionTable.Arn
+      Events:
+        PairApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Ec2ProxyApi
+            Path: /pair
+            Method: post
+        RefreshApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Ec2ProxyApi
+            Path: /refresh
+            Method: post
+        RevokeApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Ec2ProxyApi
+            Path: /revoke
+            Method: post
+        InstancesApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Ec2ProxyApi
+            Path: /instances
+            Method: get
+        InstanceStartApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Ec2ProxyApi
+            Path: /instances/{instanceId}/start
+            Method: post
+        InstanceStopApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Ec2ProxyApi
+            Path: /instances/{instanceId}/stop
+            Method: post
+
+  DeviceSessionTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: deviceId
+          AttributeType: S
+      KeySchema:
+        - AttributeName: deviceId
+          KeyType: HASH
+      TimeToLiveSpecification:
+        AttributeName: expiresAt
+        Enabled: true
+
+Parameters:
+  AdminToken:
+    Type: String
+    Description: Bearer token for device to call this API (store securely)
+    NoEcho: true
+
+  AllowedInstanceArns:
+    Type: String
+    Default: ""
+    Description: Comma-separated EC2 instance ARNs for Start/Stop, leave empty for all
+
+  PairCode:
+    Type: String
+    Description: One-time pairing code used by device onboarding
+    NoEcho: true
+
+  TokenSigningKey:
+    Type: String
+    Description: HMAC signing key for short-lived device access tokens
+    NoEcho: true
+
+  AccessTtlSeconds:
+    Type: Number
+    Default: 900
+    Description: Access token TTL in seconds
+
+  RefreshTtlSeconds:
+    Type: Number
+    Default: 2592000
+    Description: Refresh token TTL in seconds
+
+Conditions:
+  UseRestrictedInstances: !Not [!Equals [!Ref AllowedInstanceArns, ""]]
