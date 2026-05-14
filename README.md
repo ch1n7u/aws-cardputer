@@ -120,13 +120,19 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 2. Generate long, secure secrets for `AdminToken`, `PairCode`, and `TokenSigningKey`:
 
+**Generate AdminToken**
+
 ```powershell
 $adminToken = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)) -replace '[^a-zA-Z0-9]', ''; Write-Host "AdminToken: $adminToken"
 ```
 
+**Generate PairCode**
+
 ```powershell
 $pairCode = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(16)) -replace '[^a-zA-Z0-9]', ''; Write-Host "PairCode: $pairCode"
 ```
+
+**Generate TokenSigningKey**
 
 ```powershell
 $tokenSigningKey = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)) -replace '[^a-zA-Z0-9]', ''; Write-Host "TokenSigningKey: $tokenSigningKey"
