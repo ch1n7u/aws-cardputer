@@ -151,8 +151,21 @@ def lambda_handler(event, context):
             pair_code = body.get("pairCode", "")
             if not device_id or not pair_code:
                 return _response(400, {"error": "missing deviceId or pairCode"})
-            if pair_code != PAIR_CODE:
-                return _response(401, {"error": "pair failed"})
+            
+            pair_code_str = str(pair_code)
+            expected_code_str = str(PAIR_CODE)
+            
+            if pair_code_str == expected_code_str:
+                pass # Exact match
+            elif pair_code_str.strip() == expected_code_str.strip():
+                if pair_code_str.lower() == expected_code_str.lower():
+                    return _response(401, {"error": "pair failed: whitespace mismatch"})
+                else:
+                    return _response(401, {"error": "pair failed: whitespace and case mismatch"})
+            elif pair_code_str.strip().lower() == expected_code_str.strip().lower():
+                return _response(401, {"error": "pair failed: case mismatch"})
+            else:
+                return _response(401, {"error": f"pair failed: invalid code (got length {len(pair_code_str)}, expected {len(expected_code_str)})"})
 
             refresh_token = secrets.token_urlsafe(32)
             refresh_hash = _refresh_hash(refresh_token)
