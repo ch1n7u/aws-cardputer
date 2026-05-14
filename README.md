@@ -31,7 +31,7 @@ flowchart LR
 - Secure settings persistence (XOR encoded in NVS)
 - SD card support for config import/export (`/ec2.conf`, `/wifi.conf`)
 
-**Not Implemented:**
+**Upcoming Features:**
 - SSH shell access
 - Terminal UI and ANSI color support
 - Command relay mode
