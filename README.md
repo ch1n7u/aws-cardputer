@@ -1,122 +1,174 @@
-# PocketCloud Terminal
+# PocketCloud Terminal — Handheld AWS EC2 Controller for M5Stack Cardputer
 
-## M5Stack Cardputer v1.1 AWS EC2 Pocket SSH Launcher
+A lightweight handheld cloud control firmware for the M5Stack Cardputer v1.1. It enables secure monitoring and management of AWS EC2 instances directly from a portable device. 
 
-A lightweight handheld cloud terminal firmware for the M5Stack Cardputer v1.1 that enables:
+## Project Overview
 
-- Wi-Fi connectivity
-- AWS API authentication
-- EC2 instance management (start/stop)
+PocketCloud Terminal turns your M5Stack Cardputer into a portable EC2 remote controller. It connects to Wi-Fi, fetches instance states, and can start or stop instances using either a secure API Gateway/Lambda proxy or Direct AWS IAM integration.
+
+**Architecture Flow:**
+```mermaid
+flowchart LR
+    A[Cardputer] --> B[Wi-Fi]
+    B --> C{Authentication}
+    C -->|Proxy Mode| D[API Gateway + Lambda]
+    C -->|Direct Mode| E[AWS IAM]
+    D --> F[AWS EC2]
+    E --> F
+```
+
+## Current Features
+
+**Implemented:**
+- Wi-Fi network scanning, password entry, and automatic reconnection
+- Built-in local web server for configuration
+- AWS API Gateway & Lambda proxy authentication (Bearer Tokens & Pairing Codes)
+- Direct AWS Mode (IAM Access Key/Secret AWSv4 signing on-device)
+- EC2 instance status polling and listing
+- EC2 instance power control (Start/Stop)
+- Animated boot sequence and UI with battery and Wi-Fi status indicators
+- On-device settings UI protected by a 4-digit PIN
+- Secure settings persistence (XOR encoded in NVS)
+- SD card support for config import/export (`/ec2.conf`, `/wifi.conf`)
+
+**Not Implemented:**
 - SSH shell access
-- Keyboard input and display output
+- Terminal UI and ANSI color support
+- Command relay mode
 
-## Hardware
+## Hardware Requirements
 
 - **Device**: M5Stack Cardputer v1.1
 - **MCU**: ESP32-S3 (STAMP-S3A)
-- **RAM**: Constrained (8MB Flash)
-- **Display**: ST7789V2 TFT (240x135)
-- **Input**: 56-key keyboard
-- **Power**: Battery with monitoring API
+- **Cables**: USB-C cable for power and programming
+- **Network**: 2.4GHz Wi-Fi connection
+- **Storage**: Optional MicroSD card (FAT32) for config management
 
-## Build System
+## Software Requirements
 
-**PlatformIO** with Arduino framework targeting `m5stack-stamps3`
-
-### Build Commands
-
-```bash
-# Install dependencies
-platformio lib install
-
-# Build firmware
-platformio run
-
-# Build and upload to device
-platformio run --target upload
-
-# Monitor serial output
-platformio run --target monitor
-
-# Run the EC2 proxy Lambda tests
-python -m pytest lambda/ec2_proxy/tests/test_handler.py
-```
+- Visual Studio Code
+- PlatformIO IDE extension or CLI
+- AWS CLI v2 (for backend deployment)
+- AWS SAM CLI (for backend deployment)
+- Python 3.11+
+- Git
 
 ## Project Structure
 
 ```text
-template.yaml                # Root AWS SAM template for the EC2 proxy Lambda
-src/
-  main.cpp                 # Main firmware entry point
-include/
-  hardware_config.h        # Hardware constants and configuration
-lambda/
-  ec2_proxy/
-    handler.py             # EC2 proxy Lambda handler
-    tests/                 # Lambda tests
-    README.md              # Lambda deployment notes
-    deploy.ps1             # Windows deployment helper
-lib/                       # Custom libraries (local)
-test/                      # Firmware tests (future)
-platformio.ini             # PlatformIO build configuration
-README.md                  # Project overview and setup
+aws-cardputer/
+├── DEPLOYMENT_GUIDE.md        # Comprehensive deployment and setup instructions
+├── README.md                  # This document
+├── include/
+│   └── hardware_config.h      # Hardware constants and configuration
+├── lambda/
+│   └── ec2_proxy/
+│       ├── deploy.ps1         # Windows deployment script for AWS SAM
+│       ├── handler.py         # Lambda backend Python logic
+│       ├── requirements.txt   # Lambda dependencies
+│       └── template.yaml      # AWS SAM template for the API proxy
+├── platformio.ini             # PlatformIO build configuration
+└── src/
+    └── main.cpp               # Main firmware source code
 ```
 
-## Dependencies
+## How It Works
 
-### Firmware Libraries
+1. **Boot**: The device boots and plays an animated initialization sequence.
+2. **Network**: It connects to a saved Wi-Fi network or prompts the user to scan and connect.
+3. **Setup**: The device loads AWS credentials from non-volatile storage (NVS) or SD card. An embedded local web server starts, allowing easy configuration via a browser.
+4. **Fetching**: The user presses `[E]` to fetch EC2 instances. The firmware authenticates with AWS directly or via the API proxy.
+5. **Control**: The display lists instances with color-coded status indicators. The user selects an instance and presses `[T]` or `[E]` to toggle power (start/stop).
 
-- **M5Cardputer** v1.1.1 - Cardputer hardware abstraction and keyboard/input
-- **M5Unified** v0.2.14 - Unified M5Stack device API
-- **M5GFX** v0.2.20 - Graphics and sprite rendering
-- **ArduinoJson** v6.21.6 - JSON parsing for EC2 proxy responses
+## Installation
 
-### Built-in (ESP32 Core)
+```bash
+# Clone the repository
+git clone https://github.com/YOUR_REPO/aws-cardputer.git
+cd aws-cardputer
 
-- WiFi - Network connectivity
-- WiFiClientSecure - Secure connections
-- HTTPClient - HTTP/HTTPS communication
-- Preferences - Non-volatile storage
-- SD / SPI - optional SD card configuration storage
-- WebServer - local config/status web UI
-- FreeRTOS - Real-time OS
+# Install PlatformIO dependencies
+pio lib install
 
-### Lambda Runtime
+# Build the firmware
+pio run
+```
 
-- **Python 3.11** - AWS SAM Lambda runtime
-- **boto3** - Provided by the AWS Lambda runtime for EC2/DynamoDB access
-- **pytest** - Only needed locally for running `lambda/ec2_proxy/tests/test_handler.py`
+## Firmware Build
 
-### Conditional (Future)
+Upload the firmware to the Cardputer over USB using PlatformIO:
 
-- wolfSSH - Lightweight SSH (only if memory stable)
+```bash
+# Upload to device
+pio run --target upload
 
-## Milestone 1: Project Initialization ✓
-
-- [x] Initialize PlatformIO project for Cardputer v1.1
-- [x] Create correct platformio.ini with dependencies
-- [x] Add M5Unified, M5GFX libraries
-- [x] Create project folder structure
-- [x] Implement minimal compilable firmware:
-  - [x] Initialize M5Cardputer
-  - [x] Initialize display (ST7789V2)
-  - [x] Initialize keyboard (56-key)
-  - [x] Initialize battery API
-  - [x] Display "PocketCloud Terminal"
-- [x] Ensure clean compilation
-
-## Next Steps
-
-- Milestone 2: Wi-Fi connectivity and SSID scanning
-- Milestone 3: Backend API authentication
-- Milestone 4: EC2 control and polling
-- Milestone 5: SSH terminal implementation
+# Monitor serial output
+pio device monitor --baud 115200
+```
 
 ## AWS Deployment
 
-The EC2 proxy backend is defined in the root [template.yaml](template.yaml) and points to `lambda/ec2_proxy/` as the Lambda code directory.
+The backend proxy is optional if you use Direct AWS Mode. To deploy the proxy via AWS SAM:
 
-Use the Lambda folder for deployment and tests:
+1. Generate secure tokens (AdminToken, PairCode, TokenSigningKey).
+2. Ensure AWS SAM CLI and AWS CLI are configured.
+3. Deploy the SAM stack using PowerShell:
 
-- `lambda/ec2_proxy/deploy.ps1` for Windows deployment
-- `lambda/ec2_proxy/tests/test_handler.py` for local test coverage
+```powershell
+cd lambda/ec2_proxy
+.\deploy.ps1 `
+  -StackName "ec2-proxy-stack" `
+  -Region "ap-south-1" `
+  -AdminToken "YOUR_ADMIN_TOKEN" `
+  -PairCode "YOUR_PAIR_CODE" `
+  -TokenSigningKey "YOUR_SIGNING_KEY"
+```
+4. Note the output `Ec2ProxyApiEndpoint` and enter it into the device configuration.
+
+## Device Configuration
+
+Configuration can be performed directly on the device by pressing `[S]` or via the local web interface by navigating to the device's IP address.
+
+**Configuration Options:**
+- **AWS Proxy**: API Gateway URL, Pair Code, Legacy Admin Token.
+- **Direct AWS Mode**: AWS Region, Access Key ID, Secret Access Key.
+- **Security**: Device 4-digit PIN lock.
+- **Network**: Wi-Fi SSID and Password.
+
+Settings can be exported/imported using an SD card with an `/ec2.conf` file.
+
+## Security Model
+
+- **Proxy Auth**: Uses a pairing code exchange to retrieve short-lived access and refresh tokens, verified via HMAC SHA-256.
+- **Direct AWS**: AWS V4 Signature HMAC SHA-256 generation is executed directly on the device.
+- **Storage Security**: All credentials stored in Preferences NVS are XOR encoded using a hardware-specific MAC address key to prevent casual dumping.
+- **Access Control**: The on-device settings UI is protected by a 4-digit PIN.
+
+## Troubleshooting
+
+- **Upload Failures**: Unplug/replug the USB cable. Ensure M5Stack Cardputer drivers (USB to UART Bridge) are properly installed.
+- **Wi-Fi Issues**: Ensure you are connecting to a 2.4GHz network. The ESP32-S3 does not support 5GHz Wi-Fi.
+- **AWS Auth Failure**: Check device clock synchronization. TLS and AWS requests require accurate time via NTP. Verify your pairing code or AWS access keys via the local web interface `/debug` endpoint.
+- **SAM CLI Missing**: Ensure `aws-sam-cli` is installed and in your system PATH. Restart PowerShell after installation.
+
+## Limitations
+
+- **No SSH**: SSH terminal access is NOT currently implemented.
+- **Memory Limits**: The EC2 instance list is constrained to a predefined maximum limit to save RAM.
+- **Display Constraints**: The UI displays abbreviated instance names to fit the Cardputer screen.
+- **Wi-Fi Bands**: Only supports 2.4GHz Wi-Fi.
+
+## Roadmap
+
+**Planned Features:**
+- SSH terminal access integration
+- Command relay mode
+- Full ANSI color terminal output
+
+## Contributing
+
+Contributions are welcome! Please adhere to standard pull request workflows and ensure the firmware builds successfully before submitting changes.
+
+## License
+
+Respect repository license. Please see the root directory for any LICENSE files.
