@@ -84,7 +84,7 @@ aws-cardputer/
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_REPO/aws-cardputer.git
+git clone https://github.com/ch1n7u/aws-cardputer.git
 cd aws-cardputer
 
 # Install PlatformIO dependencies
