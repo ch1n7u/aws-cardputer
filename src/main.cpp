@@ -1003,7 +1003,6 @@ bool prompt_for_pin(const char* expectedPin, const char* promptTitle) {
 bool configure_secure_http(HTTPClient* http, WiFiClientSecure* client, const String& url) {
   // The proxy runs on API Gateway and some firmware builds fail parsing the embedded CA chain.
   // Fall back to an insecure TLS client so the EC2 control path remains usable on-device.
-  ec2_debug_append("EC2: HTTP begin " + url);
   client->setInsecure();
   client->setTimeout(15000);
   bool ok = http->begin(*client, url);
@@ -1020,7 +1019,6 @@ bool post_json_with_auth(
     String* responseBody) {
   WiFiClientSecure client;
   HTTPClient http;
-    ec2_debug_append("EC2: POST " + url);
     if (!configure_secure_http(&http, &client, url)) return false;
   http.addHeader("Content-Type", "application/json");
   if (bearer.length() > 0) {
