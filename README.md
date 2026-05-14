@@ -28,7 +28,7 @@ flowchart LR
 - Secure settings persistence (XOR encoded in NVS)
 - SD card support for config import/export (`/ec2.conf`, `/wifi.conf`)
 
-**Not Implemented:**
+**Upcoming Features:**
 - SSH shell access
 - Terminal UI and ANSI color support
 - Command relay mode
@@ -81,7 +81,7 @@ aws-cardputer/
 
 ```bash
 # Clone the repository
-git clone https://github.com/YOUR_REPO/aws-cardputer.git
+git clone https://github.com/ch1n7u/aws-cardputer.git
 cd aws-cardputer
 
 # Install PlatformIO dependencies
