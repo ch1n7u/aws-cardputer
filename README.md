@@ -4,7 +4,7 @@ A lightweight handheld cloud control firmware for the M5Stack Cardputer v1.1. It
 
 ## Project Overview
 
-PocketCloud Terminal turns your M5Stack Cardputer into a portable EC2 remote controller. It connects to Wi-Fi, fetches instance states, and can start or stop instances using either a secure API Gateway/Lambda proxy or Direct AWS IAM integration.
+PocketCloud Terminal turns your M5Stack Cardputer into a portable EC2 remote controller. It connects to Wi-Fi, fetches instance states, and can start or stop instances using a secure API Gateway/Lambda proxy.
 
 **Architecture Flow:**
 ```mermaid
@@ -12,9 +12,7 @@ flowchart LR
     A[Cardputer] --> B[Wi-Fi]
     B --> C{Authentication}
     C -->|Proxy Mode| D[API Gateway + Lambda]
-    C -->|Direct Mode| E[AWS IAM]
     D --> F[AWS EC2]
-    E --> F
 ```
 
 ## Current Features
@@ -23,7 +21,6 @@ flowchart LR
 - Wi-Fi network scanning, password entry, and automatic reconnection
 - Built-in local web server for configuration
 - AWS API Gateway & Lambda proxy authentication (Bearer Tokens & Pairing Codes)
-- Direct AWS Mode (IAM Access Key/Secret AWSv4 signing on-device)
 - EC2 instance status polling and listing
 - EC2 instance power control (Start/Stop)
 - Animated boot sequence and UI with battery and Wi-Fi status indicators
@@ -77,7 +74,7 @@ aws-cardputer/
 1. **Boot**: The device boots and plays an animated initialization sequence.
 2. **Network**: It connects to a saved Wi-Fi network or prompts the user to scan and connect.
 3. **Setup**: The device loads AWS credentials from non-volatile storage (NVS) or SD card. An embedded local web server starts, allowing easy configuration via a browser.
-4. **Fetching**: The user presses `[E]` to fetch EC2 instances. The firmware authenticates with AWS directly or via the API proxy.
+4. **Fetching**: The user presses `[E]` to fetch EC2 instances. The firmware authenticates with AWS via the API proxy.
 5. **Control**: The display lists instances with color-coded status indicators. The user selects an instance and presses `[T]` or `[E]` to toggle power (start/stop).
 
 ## Installation
@@ -108,22 +105,66 @@ pio device monitor --baud 115200
 
 ## AWS Deployment
 
-The backend proxy is optional if you use Direct AWS Mode. To deploy the proxy via AWS SAM:
+To securely route requests from your Cardputer to your AWS EC2 instances, you need to deploy the backend proxy to your AWS account. This proxy uses API Gateway, AWS Lambda, and DynamoDB.
 
-1. Generate secure tokens (AdminToken, PairCode, TokenSigningKey).
-2. Ensure AWS SAM CLI and AWS CLI are configured.
-3. Deploy the SAM stack using PowerShell:
+### Prerequisites
+
+Before deploying the backend proxy, ensure you have set up your AWS environment:
+1. **AWS Account**: You need an active AWS Account.
+2. **IAM User**: Create an IAM User with AdministratorAccess (or sufficient permissions to create CloudFormation stacks, Lambda functions, API Gateways, IAM roles, and DynamoDB tables). 
+3. **AWS CLI Setup**: Install the [AWS CLI](https://aws.amazon.com/cli/) and run `aws configure` in your terminal to set your `AWS Access Key ID`, `AWS Secret Access Key`, and `Default region name` (e.g., `ap-south-1`).
+4. **AWS SAM CLI**: Install the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) which is required for building and deploying the infrastructure.
+
+### Deployment Steps
+
+1. Open PowerShell and, if script execution is restricted, allow local scripts for this session:
 
 ```powershell
-cd lambda/ec2_proxy
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+2. Generate long, secure secrets for `AdminToken`, `PairCode`, and `TokenSigningKey`:
+
+```powershell
+# Generate AdminToken (32+ bytes, base64-like)
+$adminToken = [Convert]::ToBase64String(
+  [System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)
+) -replace '[^a-zA-Z0-9]', ''
+Write-Host "AdminToken: $adminToken"
+
+# Generate PairCode (16+ bytes)
+$pairCode = [Convert]::ToBase64String(
+  [System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(16)
+) -replace '[^a-zA-Z0-9]', ''
+Write-Host "PairCode: $pairCode"
+
+# Generate TokenSigningKey (32+ bytes)
+$tokenSigningKey = [Convert]::ToBase64String(
+  [System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)
+) -replace '[^a-zA-Z0-9]', ''
+Write-Host "TokenSigningKey: $tokenSigningKey"
+```
+
+3. Change into the backend deployment folder:
+
+```powershell
+cd .\lambda\ec2_proxy
+```
+
+4. Deploy the SAM stack using the generated values:
+
+```powershell
 .\deploy.ps1 `
   -StackName "ec2-proxy-stack" `
   -Region "ap-south-1" `
-  -AdminToken "YOUR_ADMIN_TOKEN" `
-  -PairCode "YOUR_PAIR_CODE" `
-  -TokenSigningKey "YOUR_SIGNING_KEY"
+  -AdminToken $adminToken `
+  -PairCode $pairCode `
+  -TokenSigningKey $tokenSigningKey
 ```
-4. Note the output `Ec2ProxyApiEndpoint` and enter it into the device configuration.
+
+5. Copy the `Ec2ProxyApiEndpoint` value from the deployment output and enter it into the device configuration.
+
+Example output values are shown in [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) if you want a full Windows setup walkthrough.
 
 ## Device Configuration
 
@@ -131,7 +172,6 @@ Configuration can be performed directly on the device by pressing `[S]` or via t
 
 **Configuration Options:**
 - **AWS Proxy**: API Gateway URL, Pair Code, Legacy Admin Token.
-- **Direct AWS Mode**: AWS Region, Access Key ID, Secret Access Key.
 - **Security**: Device 4-digit PIN lock.
 - **Network**: Wi-Fi SSID and Password.
 
@@ -140,7 +180,6 @@ Settings can be exported/imported using an SD card with an `/ec2.conf` file.
 ## Security Model
 
 - **Proxy Auth**: Uses a pairing code exchange to retrieve short-lived access and refresh tokens, verified via HMAC SHA-256.
-- **Direct AWS**: AWS V4 Signature HMAC SHA-256 generation is executed directly on the device.
 - **Storage Security**: All credentials stored in Preferences NVS are XOR encoded using a hardware-specific MAC address key to prevent casual dumping.
 - **Access Control**: The on-device settings UI is protected by a 4-digit PIN.
 
@@ -148,7 +187,7 @@ Settings can be exported/imported using an SD card with an `/ec2.conf` file.
 
 - **Upload Failures**: Unplug/replug the USB cable. Ensure M5Stack Cardputer drivers (USB to UART Bridge) are properly installed.
 - **Wi-Fi Issues**: Ensure you are connecting to a 2.4GHz network. The ESP32-S3 does not support 5GHz Wi-Fi.
-- **AWS Auth Failure**: Check device clock synchronization. TLS and AWS requests require accurate time via NTP. Verify your pairing code or AWS access keys via the local web interface `/debug` endpoint.
+- **AWS Auth Failure**: Check device clock synchronization. TLS and AWS requests require accurate time via NTP. Verify your pairing code via the local web interface `/debug` endpoint.
 - **SAM CLI Missing**: Ensure `aws-sam-cli` is installed and in your system PATH. Restart PowerShell after installation.
 
 ## Limitations
