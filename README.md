@@ -121,23 +121,9 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 2. Generate long, secure secrets for `AdminToken`, `PairCode`, and `TokenSigningKey`:
 
 ```powershell
-# Generate AdminToken (32+ bytes, base64-like)
-$adminToken = [Convert]::ToBase64String(
-  [System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)
-) -replace '[^a-zA-Z0-9]', ''
-Write-Host "AdminToken: $adminToken"
-
-# Generate PairCode (16+ bytes)
-$pairCode = [Convert]::ToBase64String(
-  [System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(16)
-) -replace '[^a-zA-Z0-9]', ''
-Write-Host "PairCode: $pairCode"
-
-# Generate TokenSigningKey (32+ bytes)
-$tokenSigningKey = [Convert]::ToBase64String(
-  [System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)
-) -replace '[^a-zA-Z0-9]', ''
-Write-Host "TokenSigningKey: $tokenSigningKey"
+$adminToken = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)) -replace '[^a-zA-Z0-9]', ''; Write-Host "AdminToken: $adminToken"
+$pairCode = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(16)) -replace '[^a-zA-Z0-9]', ''; Write-Host "PairCode: $pairCode"
+$tokenSigningKey = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)) -replace '[^a-zA-Z0-9]', ''; Write-Host "TokenSigningKey: $tokenSigningKey"
 ```
 
 3. Change into the backend deployment folder:
@@ -149,12 +135,7 @@ cd .\lambda\ec2_proxy
 4. Deploy the SAM stack using the generated values:
 
 ```powershell
-.\deploy.ps1 `
-  -StackName "ec2-proxy-stack" `
-  -Region "ap-south-1" `
-  -AdminToken $adminToken `
-  -PairCode $pairCode `
-  -TokenSigningKey $tokenSigningKey
+.\deploy.ps1 -StackName "ec2-proxy-stack" -Region "ap-south-1" -AdminToken $adminToken -PairCode $pairCode -TokenSigningKey $tokenSigningKey
 ```
 
 5. Copy the `Ec2ProxyApiEndpoint` value from the deployment output and enter it into the device configuration.
