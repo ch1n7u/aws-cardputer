@@ -122,7 +122,13 @@ Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 
 ```powershell
 $adminToken = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)) -replace '[^a-zA-Z0-9]', ''; Write-Host "AdminToken: $adminToken"
+```
+
+```powershell
 $pairCode = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(16)) -replace '[^a-zA-Z0-9]', ''; Write-Host "PairCode: $pairCode"
+```
+
+```powershell
 $tokenSigningKey = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)) -replace '[^a-zA-Z0-9]', ''; Write-Host "TokenSigningKey: $tokenSigningKey"
 ```
 
