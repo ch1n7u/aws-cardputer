@@ -7,13 +7,8 @@ A lightweight handheld cloud control firmware for the M5Stack Cardputer v1.1. It
 PocketCloud Terminal turns your M5Stack Cardputer into a portable EC2 remote controller. It connects to Wi-Fi, fetches instance states, and can start or stop instances using a secure API Gateway/Lambda proxy.
 
 **Architecture Flow:**
-```mermaid
-flowchart LR
-    A[Cardputer] --> B[Wi-Fi]
-    B --> C{Authentication}
-    C -->|Proxy Mode| D[API Gateway + Lambda]
-    D --> F[AWS EC2]
-```
+
+Cardputer -> Wi-Fi -> Authentication -> API Gateway + Lambda -> AWS EC2
 
 ## Current Features
 
