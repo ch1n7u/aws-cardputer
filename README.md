@@ -1,5 +1,7 @@
 # PocketCloud Terminal — Handheld AWS EC2 Controller for M5Stack Cardputer
 
+![Pocket Cloud on M5Stack Cardputer](images/cardputer.jpeg)
+
 A lightweight handheld cloud control firmware for the M5Stack Cardputer v1.1. It enables secure monitoring and management of AWS EC2 instances directly from a portable device. 
 
 ## Project Overview
