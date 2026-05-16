@@ -589,6 +589,8 @@ TokenSigningKey: q1w2e3r4t5y6u7i8o9p0a1s2d3f4g5h
 
 **Store these somewhere safe** (not in code or email; use a password manager).
 
+If you prefer, `deploy.ps1` can generate these values automatically when you omit them.
+
 ---
 
 ### 6.2 Inspect Deployment Script
@@ -654,7 +656,7 @@ This grants Lambda permission to list and control EC2 instances.
 **Preconditions:**
 - AWS CLI configured (Section 2.4)
 - SAM CLI installed and in PATH (Section 1.6)
-- AdminToken, PairCode, TokenSigningKey generated (Section 6.1)
+- Either generated secrets from Section 6.1 or let `deploy.ps1` generate them automatically
 
 **Deploy Command:**
 
@@ -662,24 +664,20 @@ This grants Lambda permission to list and control EC2 instances.
 cd C:\Users\YourName\Documents\aws-cardputer\lambda\ec2_proxy
 
 .\deploy.ps1 `
-  -StackName "ec2-proxy-stack" `
-  -Region "ap-south-1" `
-  -AdminToken "YOUR_ADMIN_TOKEN_HERE" `
-  -PairCode "YOUR_PAIR_CODE_HERE" `
-  -TokenSigningKey "YOUR_TOKEN_SIGNING_KEY_HERE"
+   -StackName "ec2-proxy-stack" `
+   -Region "ap-south-1"
 ```
 
-Replace `YOUR_*_HERE` with the values from Section 6.1.
+To use manually generated values instead, add `-AdminToken`, `-PairCode`, and `-TokenSigningKey`.
 
 **Example:**
 ```powershell
 .\deploy.ps1 `
-  -StackName "ec2-proxy-stack" `
-  -Region "ap-south-1" `
-  -AdminToken "a1b2c3d4e5f6g7h8i9j0k1l2m3n4o5p6" `
-  -PairCode "x9y8z7w6v5u4t3s2" `
-  -TokenSigningKey "q1w2e3r4t5y6u7i8o9p0a1s2d3f4g5h"
+   -StackName "ec2-proxy-stack" `
+   -Region "ap-south-1"
 ```
+
+If you prefer explicit secrets, add the three secret parameters shown above.
 
 ---
 

@@ -134,6 +134,13 @@ def stop_instance(instance_id):
     return resp
 
 
+def reboot_instance(instance_id):
+    if not instance_id.startswith("i-"):
+        raise ValueError("invalid instance id")
+    resp = ec2.reboot_instances(InstanceIds=[instance_id])
+    return resp
+
+
 def lambda_handler(event, context):
     try:
         method = event.get("httpMethod")
@@ -252,6 +259,17 @@ def lambda_handler(event, context):
             except ValueError as ve:
                 return _response(400, {"error": str(ve)})
             return _response(200, {"status": "stopping", "instanceId": pid})
+
+        # POST /instances/{instanceId}/reboot
+        if method == "POST" and resource and "/instances/{instanceId}/reboot" in resource:
+            pid = event.get("pathParameters", {}).get("instanceId")
+            if not pid:
+                return _response(400, {"error": "missing instanceId"})
+            try:
+                reboot_instance(pid)
+            except ValueError as ve:
+                return _response(400, {"error": str(ve)})
+            return _response(200, {"status": "rebooting", "instanceId": pid})
 
         return _response(404, {"error": "not found"})
     except Exception:

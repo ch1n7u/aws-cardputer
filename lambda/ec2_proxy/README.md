@@ -12,11 +12,13 @@ Security: set `ADMIN_TOKEN` when deploying and configure the device to include `
 
 Deployment (AWS SAM):
 
-1. Package & deploy (example):
+1. Package & deploy. `deploy.ps1` can generate missing secrets automatically, so the simplest run is:
 
 ```powershell
-./deploy.ps1 -StackName ec2-proxy-stack -Region us-east-1 -AdminToken "REPLACE_WITH_LONG_RANDOM_TOKEN" -PairCode "REPLACE_WITH_PAIR_CODE" -TokenSigningKey "REPLACE_WITH_HMAC_KEY"
+./deploy.ps1 -StackName ec2-proxy-stack -Region us-east-1
 ```
+
+If you want to supply your own values, pass `-AdminToken`, `-PairCode`, and `-TokenSigningKey` explicitly.
 
 Or use guided deploy:
 
@@ -43,6 +45,8 @@ API endpoints (after deployment):
   - Requires short-lived access token + `X-Device-Id` header
 - POST /instances/{instanceId}/stop
   - Requires short-lived access token + `X-Device-Id` header
+- POST /instances/{instanceId}/reboot
+  - Requires short-lived access token + `X-Device-Id` header
 
 Example curl (replace API_URL and TOKEN):
 
@@ -53,6 +57,7 @@ REFRESH_TOKEN=$(echo "$PAIR" | jq -r '.refreshToken')
 
 curl -H "Authorization: Bearer $ACCESS_TOKEN" -H "X-Device-Id: cardputer-001" https://API_ID.execute-api.REGION.amazonaws.com/Prod/instances
 curl -X POST -H "Authorization: Bearer $ACCESS_TOKEN" -H "X-Device-Id: cardputer-001" https://API_ID.execute-api.REGION.amazonaws.com/Prod/instances/i-0123456789abcdef/start
+curl -X POST -H "Authorization: Bearer $ACCESS_TOKEN" -H "X-Device-Id: cardputer-001" https://API_ID.execute-api.REGION.amazonaws.com/Prod/instances/i-0123456789abcdef/reboot
 ```
 
 Notes:

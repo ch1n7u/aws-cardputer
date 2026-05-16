@@ -10,37 +10,51 @@ PocketCloud Terminal turns your M5Stack Cardputer into a portable EC2 remote con
 
 Cardputer -> Wi-Fi -> Authentication -> API Gateway + Lambda -> AWS EC2
 
-## Current Features
+### Prerequisites
 
-**Implemented:**
-- Wi-Fi network scanning, password entry, and automatic reconnection
-- Built-in local web server for configuration
-- AWS API Gateway & Lambda proxy authentication (Bearer Tokens & Pairing Codes)
-- EC2 instance status polling and listing
-- EC2 instance power control (Start/Stop)
-- Animated boot sequence and UI with battery and Wi-Fi status indicators
-- On-device settings UI protected by a 4-digit PIN
-- Secure settings persistence (XOR encoded in NVS)
-- SD card support for config import/export (`/ec2.conf`, `/wifi.conf`)
+Before deploying the backend proxy, ensure you have set up your AWS environment:
+1. **AWS Account**: You need an active AWS Account.
+2. **IAM User**: Create an IAM User with AdministratorAccess, or equivalent permissions for CloudFormation, Lambda, API Gateway, IAM, and DynamoDB.
+3. **AWS CLI Setup**: Install the [AWS CLI](https://aws.amazon.com/cli/) and run `aws configure` to set your `AWS Access Key ID`, `AWS Secret Access Key`, and default region name, for example `ap-south-1`.
+4. **AWS SAM CLI**: Install the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html).
 
-**Upcoming Features:**
-- SSH shell access
-- Terminal UI and ANSI color support
-- Command relay mode
+### Deployment Steps
 
-## Hardware Requirements
+1. Open PowerShell and, if script execution is restricted, allow local scripts for this session:
 
-- **Device**: M5Stack Cardputer v1.1
-- **MCU**: ESP32-S3 (STAMP-S3A)
-- **Cables**: USB-C cable for power and programming
-- **Network**: 2.4GHz Wi-Fi connection
-- **Storage**: Optional MicroSD card (FAT32) for config management
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
 
-## Software Requirements
+2. Change into the backend deployment folder:
 
-- Visual Studio Code
+```powershell
+cd .\lambda\ec2_proxy
+```
+
+3. Deploy the stack. The script runs `sam build` and `sam deploy` for you, and it generates missing secrets if you do not pass them:
+
+```powershell
+.
 - PlatformIO IDE extension or CLI
+```
+
+If you want to provide your own values instead of auto-generated secrets:
+
+```powershell
+.
 - AWS CLI v2 (for backend deployment)
+```
+
+4. If you need to run the SAM build manually, use:
+
+```powershell
+sam build --template-file template.yaml
+```
+
+5. Copy the `Ec2ProxyApiEndpoint` value from the deployment output and enter it into the device configuration.
+
+Example output values are shown in [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) if you want a full Windows setup walkthrough.
 - AWS SAM CLI (for backend deployment)
 - Python 3.11+
 - Git
@@ -100,15 +114,15 @@ pio device monitor --baud 115200
 
 ## AWS Deployment
 
-To securely route requests from your Cardputer to your AWS EC2 instances, you need to deploy the backend proxy to your AWS account. This proxy uses API Gateway, AWS Lambda, and DynamoDB.
+To securely route requests from your Cardputer to your AWS EC2 instances, deploy the backend proxy to your AWS account. The backend uses API Gateway, AWS Lambda, and DynamoDB.
 
 ### Prerequisites
 
 Before deploying the backend proxy, ensure you have set up your AWS environment:
 1. **AWS Account**: You need an active AWS Account.
-2. **IAM User**: Create an IAM User with AdministratorAccess (or sufficient permissions to create CloudFormation stacks, Lambda functions, API Gateways, IAM roles, and DynamoDB tables). 
-3. **AWS CLI Setup**: Install the [AWS CLI](https://aws.amazon.com/cli/) and run `aws configure` in your terminal to set your `AWS Access Key ID`, `AWS Secret Access Key`, and `Default region name` (e.g., `ap-south-1`).
-4. **AWS SAM CLI**: Install the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html) which is required for building and deploying the infrastructure.
+2. **IAM User**: Create an IAM User with AdministratorAccess, or equivalent permissions for CloudFormation, Lambda, API Gateway, IAM, and DynamoDB.
+3. **AWS CLI Setup**: Install the [AWS CLI](https://aws.amazon.com/cli/) and run `aws configure` to set your `AWS Access Key ID`, `AWS Secret Access Key`, and default region name, for example `ap-south-1`.
+4. **AWS SAM CLI**: Install the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html).
 
 ### Deployment Steps
 
@@ -118,36 +132,28 @@ Before deploying the backend proxy, ensure you have set up your AWS environment:
 Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
 ```
 
-2. Generate long, secure secrets for `AdminToken`, `PairCode`, and `TokenSigningKey`:
-
-**Generate AdminToken**
-
-```powershell
-$adminToken = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)) -replace '[^a-zA-Z0-9]', ''; Write-Host "AdminToken: $adminToken"
-```
-
-**Generate PairCode**
-
-```powershell
-$pairCode = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(16)) -replace '[^a-zA-Z0-9]', ''; Write-Host "PairCode: $pairCode"
-```
-
-**Generate TokenSigningKey**
-
-```powershell
-$tokenSigningKey = [Convert]::ToBase64String([System.Security.Cryptography.RNGCryptoServiceProvider]::new().GetBytes(32)) -replace '[^a-zA-Z0-9]', ''; Write-Host "TokenSigningKey: $tokenSigningKey"
-```
-
-3. Change into the backend deployment folder:
+2. Change into the backend deployment folder:
 
 ```powershell
 cd .\lambda\ec2_proxy
 ```
 
-4. Deploy the SAM stack using the generated values:
+3. Deploy the stack. The script runs `sam build` and `sam deploy` for you, and it generates missing secrets if you do not pass them:
 
 ```powershell
-.\deploy.ps1 -StackName "ec2-proxy-stack" -Region "ap-south-1" -AdminToken $adminToken -PairCode $pairCode -TokenSigningKey $tokenSigningKey
+.\deploy.ps1 -StackName "ec2-proxy-stack" -Region "ap-south-1"
+```
+
+If you want to provide your own values instead of auto-generated secrets:
+
+```powershell
+.\deploy.ps1 -StackName "ec2-proxy-stack" -Region "ap-south-1" -AdminToken "YOUR_ADMIN_TOKEN" -PairCode "YOUR_PAIR_CODE" -TokenSigningKey "YOUR_TOKEN_SIGNING_KEY"
+```
+
+4. If you need to run the SAM build manually, use:
+
+```powershell
+sam build --template-file template.yaml
 ```
 
 5. Copy the `Ec2ProxyApiEndpoint` value from the deployment output and enter it into the device configuration.

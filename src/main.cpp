@@ -47,6 +47,11 @@ static String last_ec2_error;
 static void set_ec2_error(const String& msg);
 static void clear_display();
 static void show_status_line(int line, const String& message, uint16_t color = 0xFFFF);
+static bool load_saved_wifi_credentials(char* ssid, size_t ssid_len, char* password, size_t password_len);
+static void clear_saved_wifi_credentials();
+static void draw_wifi_loading_screen(const String& ssid, unsigned long elapsed_ms, unsigned long timeout_ms, const String& status);
+static bool saved_wifi_network_available(const char* ssid);
+static bool connect_wifi_after_boot(const char* ssid, const char* password);
 
 static const int EC2_DEBUG_MAX_LINES = 8;
 static String ec2_debug_lines[EC2_DEBUG_MAX_LINES];
@@ -178,6 +183,55 @@ static void show_status_line(int line, const String& message, uint16_t color)
   canvas.pushSprite(0, 0);
 }
 
+static void split_wrapped_text(const String& text, int maxChars, String* firstLine, String* secondLine) {
+  firstLine->remove(0);
+  secondLine->remove(0);
+
+  if (maxChars <= 0 || text.length() <= (size_t)maxChars) {
+    *firstLine = text;
+    return;
+  }
+
+  int breakPos = maxChars;
+  for (int i = maxChars; i > 0; --i) {
+    if (text[i] == ' ') {
+      breakPos = i;
+      break;
+    }
+  }
+
+  *firstLine = text.substring(0, breakPos);
+  firstLine->trim();
+  *secondLine = text.substring(breakPos);
+  secondLine->trim();
+
+  if (secondLine->length() == 0) {
+    *secondLine = text.substring(breakPos);
+  }
+}
+
+static int draw_wrapped_wifi_line(int x, int y, int width, const String& label, const String& value, uint16_t color) {
+  const int lineHeight = 12;
+  const int maxChars = max(8, width / 6);
+  String firstLine;
+  String secondLine;
+  split_wrapped_text(value, maxChars - label.length(), &firstLine, &secondLine);
+
+  canvas.setCursor(x, y);
+  canvas.setTextColor(color, BG_COLOR);
+  canvas.fillRect(x, y, width, lineHeight * 2, BG_COLOR);
+  canvas.print(label);
+  canvas.println(firstLine);
+
+  if (secondLine.length() > 0) {
+    canvas.setCursor(x + 12, y + lineHeight);
+    canvas.print(secondLine);
+    return 2;
+  }
+
+  return 1;
+}
+
 enum class InputKeyType {
   None,
   Printable,
@@ -275,6 +329,29 @@ static void draw_home_screen()
   canvas.drawString("[E] EC2  [S] Set  [W] WiFi", canvas.width() / 2, canvas.height() - 10);
   
   canvas.pushSprite(0, 0);
+}
+
+static int draw_wifi_list_entry(int x, int y, int width, int index, const String& ssid, uint16_t color) {
+  const int lineHeight = 12;
+  const String prefix = String(index + 1) + ": ";
+  const int maxChars = max(8, width / 6);
+  String firstLine;
+  String secondLine;
+  split_wrapped_text(ssid, maxChars - prefix.length(), &firstLine, &secondLine);
+
+  canvas.setTextColor(color, BG_COLOR);
+  canvas.setCursor(x, y);
+  canvas.fillRect(x, y, width, lineHeight * 2, BG_COLOR);
+  canvas.print(prefix);
+  canvas.println(firstLine);
+
+  if (secondLine.length() > 0) {
+    canvas.setCursor(x + 12, y + lineHeight);
+    canvas.print(secondLine);
+    return 2;
+  }
+
+  return 1;
 }
 
 struct EC2Instance {
@@ -575,6 +652,7 @@ static void send_config_page(const String& notice = "", bool error = false) {
   html += F("<section><h2>WiFi</h2><label>SSID</label><input name='wifi_ssid' value='");
   html += html_escape(wifiSsid);
   html += F("'><label>Password</label><input name='wifi_password' type='password' placeholder='Leave blank to keep current password'>");
+  html += F("<div class='row'><input id='forget_wifi' name='forget_wifi' type='checkbox' value='1'><label for='forget_wifi'>Forget saved WiFi credentials</label></div>");
   html += F("<small>Changing WiFi saves credentials. Reboot or press W on the device to reconnect.</small></section>");
   html += F("<button type='submit'>Save settings</button></form>");
   html += F("<section><h2>Status</h2><p>Pair code: ");
@@ -611,6 +689,7 @@ static void handle_config_save() {
   String pinNew = form_value("pin_new");
   String wifiSsid = form_value("wifi_ssid");
   String wifiPassword = form_value("wifi_password");
+  bool forgetWifi = configServer.hasArg("forget_wifi");
 
   url.trim();
   deviceId.trim();
@@ -620,7 +699,6 @@ static void handle_config_save() {
   awsAccessKey.trim();
   awsSecretKey.trim();
   pinNew.trim();
-  // wifiSsid.trim();
 
   if (pinNew.length() > 0 && pinNew.length() != 4) {
     send_config_page("PIN must be exactly 4 digits.", true);
@@ -666,7 +744,9 @@ static void handle_config_save() {
 
   save_ec2_settings_to_prefs(&settings);
 
-  if (wifiSsid.length() > 0) {
+  if (forgetWifi) {
+    clear_saved_wifi_credentials();
+  } else if (wifiSsid.length() > 0) {
     Preferences wifiPrefs;
     if (wifiPrefs.begin("wifi", false)) {
       wifiPrefs.putString("ssid", wifiSsid);
@@ -677,7 +757,7 @@ static void handle_config_save() {
     }
   }
 
-  send_config_page("Settings saved.");
+  send_config_page(forgetWifi ? "WiFi credentials removed." : "Settings saved.");
 }
 
 // Background task for running EC2 test from web handler
@@ -983,7 +1063,17 @@ static int fetch_ec2_instances_direct(const Ec2Settings& settings, EC2Instance* 
 static bool send_ec2_action_direct(const Ec2Settings& settings, const char* instanceId, const char* action) {
   int code = -1;
   String body;
-  String actionName = strcmp(action, "start") == 0 ? "StartInstances" : "StopInstances";
+  String actionName;
+  if (strcmp(action, "start") == 0) {
+    actionName = "StartInstances";
+  } else if (strcmp(action, "stop") == 0) {
+    actionName = "StopInstances";
+  } else if (strcmp(action, "reboot") == 0) {
+    actionName = "RebootInstances";
+  } else {
+    set_ec2_error("Unknown action");
+    return false;
+  }
   String query = "Action=" + actionName + "&InstanceId.1=" + aws_uri_encode(String(instanceId)) + "&Version=2016-11-15";
   return aws_direct_request(settings, query, &code, &body);
 }
@@ -1243,7 +1333,7 @@ int fetch_ec2_instances(EC2Instance *out, int maxInstances) {
   return i;
 }
 
-// Send start/stop action. action should be "start" or "stop". Returns true on HTTP 200.
+// Send EC2 action. action should be "start", "stop", or "reboot". Returns true on HTTP 2xx.
 bool send_ec2_action(const char *instanceId, const char *action) {
   last_ec2_error = "";
   Ec2Settings settings;
@@ -1300,7 +1390,7 @@ bool send_ec2_action(const char *instanceId, const char *action) {
   return (code >= 200 && code < 300);
 }
 
-// Display EC2 instances UI and allow start/stop via numeric selection
+// Display EC2 instances UI and allow actions on the selected instance
 void show_ec2_ui() {
   static Ec2Settings settings;
   ec2_debug_clear("Connecting to AWS...");
@@ -1337,8 +1427,25 @@ void show_ec2_ui() {
   int selected_idx = 0;
   float anim_y = 25; // initial Y for selection box
 
-  auto perform_selected_action = [&]() {
-    const char *action = (strcmp(list[selected_idx].state, "running") == 0) ? "stop" : "start";
+  auto refresh_instances = [&]() {
+    ec2_debug_clear("Refreshing...");
+    ec2_debug_append("Fetching instances...");
+    int refreshed_count = fetch_ec2_instances(list, MAX_INSTANCES);
+    if (refreshed_count >= 0) {
+      selectableCount = refreshed_count;
+      if (selectableCount == 0) {
+        selected_idx = 0;
+      } else if (selected_idx >= selectableCount) {
+        selected_idx = selectableCount - 1;
+      }
+      ec2_debug_append(String("Loaded ") + String(selectableCount));
+    } else {
+      ec2_debug_append(String("Failed: ") + last_ec2_error);
+    }
+    delay(900);
+  };
+
+  auto perform_selected_action = [&](const char *action) {
     ec2_debug_clear("Sending Request...");
     ec2_debug_append(String("Sending ") + action + " to");
     ec2_debug_append(list[selected_idx].name);
@@ -1348,10 +1455,92 @@ void show_ec2_ui() {
     delay(1500);
 
     // Refresh list after action and stay on the EC2 page.
-    int refreshed_count = fetch_ec2_instances(list, MAX_INSTANCES);
-    if (refreshed_count > 0) {
-      selectableCount = refreshed_count;
-      if (selected_idx >= selectableCount) selected_idx = selectableCount - 1;
+    refresh_instances();
+  };
+
+  auto show_instance_action_menu = [&]() {
+    const char *powerAction = (strcmp(list[selected_idx].state, "running") == 0) ? "stop" : "start";
+    const char *options[3] = {
+      (strcmp(powerAction, "stop") == 0) ? "Stop" : "Start",
+      "Reboot",
+      "Refresh"
+    };
+    int action_idx = 0;
+    float action_anim_y = 38;
+    unsigned long last_action_frame = millis();
+
+    while (true) {
+      M5Cardputer.update();
+      if (config_server_started) configServer.handleClient();
+
+      unsigned long now = millis();
+      float dt = (now - last_action_frame) / 1000.0;
+      last_action_frame = now;
+
+      InputKey input = read_input_key();
+      if (input.type == InputKeyType::Escape) return;
+      if (input.type == InputKeyType::Printable) {
+        char c = tolower(input.value);
+        if (c == 'w' || c == ';' || c == ',') {
+          if (action_idx > 0) action_idx--;
+        } else if (c == 's' || c == '.' || c == '/') {
+          if (action_idx < 2) action_idx++;
+        } else if (c == 'r') {
+          refresh_instances();
+          return;
+        } else if (c == 'b') {
+          return;
+        }
+      } else if (input.type == InputKeyType::Enter) {
+        if (action_idx == 0) {
+          perform_selected_action(powerAction);
+        } else if (action_idx == 1) {
+          perform_selected_action("reboot");
+        } else {
+          refresh_instances();
+        }
+        return;
+      }
+
+      int target_y = 38 + action_idx * 22;
+      if (abs(action_anim_y - target_y) > 0.5) {
+        action_anim_y += (target_y - action_anim_y) * 15.0 * dt;
+      } else {
+        action_anim_y = target_y;
+      }
+
+      canvas.fillScreen(BG_COLOR);
+      draw_glow_rect(4, 4, canvas.width() - 8, canvas.height() - 8);
+
+      canvas.setTextDatum(top_center);
+      canvas.setTextColor(ACCENT_COLOR);
+      canvas.drawString("Instance Action", canvas.width() / 2, 10);
+
+      canvas.setTextDatum(top_center);
+      canvas.setTextColor(DIM_COLOR);
+      String instanceName = String(list[selected_idx].name);
+      if (instanceName.length() > 24) instanceName = instanceName.substring(0, 24);
+      canvas.drawString(instanceName, canvas.width() / 2, 23);
+
+      draw_glow_rect(18, (int)action_anim_y, canvas.width() - 36, 18);
+      canvas.fillRoundRect(18, (int)action_anim_y, canvas.width() - 36, 18, 3, canvas.color565(10, 30, 50));
+
+      canvas.setTextDatum(middle_center);
+      for (int i = 0; i < 3; ++i) {
+        uint16_t color = (i == action_idx) ? TFT_WHITE : FG_COLOR;
+        if (strcmp(options[i], "Stop") == 0) color = (i == action_idx) ? TFT_WHITE : ERR_COLOR;
+        else if (strcmp(options[i], "Start") == 0) color = (i == action_idx) ? TFT_WHITE : SUCCESS_COLOR;
+        else if (strcmp(options[i], "Reboot") == 0) color = (i == action_idx) ? TFT_WHITE : WARN_COLOR;
+        canvas.setTextColor(color);
+        canvas.drawString(options[i], canvas.width() / 2, 47 + i * 22);
+      }
+
+      canvas.setTextDatum(bottom_center);
+      canvas.setTextColor(FG_COLOR);
+      canvas.drawString("[Enter]=Select  [Esc]=Back", canvas.width() / 2, canvas.height() - 10);
+
+      canvas.pushSprite(0, 0);
+      delay(10);
     }
   };
   
@@ -1372,17 +1561,19 @@ void show_ec2_ui() {
     
     if (input.type == InputKeyType::Printable) {
       char c = tolower(input.value);
-      if (c == 'w' || c == ';' || c == ',') {
+      if (selectableCount == 0) {
+        if (c == 'r') refresh_instances();
+      } else if (c == 'w' || c == ';' || c == ',') {
         if (selected_idx > 0) selected_idx--;
       } else if (c == 's' || c == '.' || c == '/') {
         if (selected_idx < selectableCount - 1) selected_idx++;
-      } else if (c >= '1' && c < '1' + selectableCount) {
-        selected_idx = c - '1';
       } else if (c == 't' || c == 'e') {
-        perform_selected_action();
+        show_instance_action_menu();
+      } else if (c == 'r') {
+        refresh_instances();
       }
-    } else if (input.type == InputKeyType::Enter) {
-      perform_selected_action();
+    } else if (input.type == InputKeyType::Enter && selectableCount > 0) {
+      show_instance_action_menu();
     }
     
     // Rendering logic
@@ -1405,6 +1596,18 @@ void show_ec2_ui() {
     canvas.setTextColor(ACCENT_COLOR);
     canvas.setTextDatum(top_center);
     canvas.drawString("EC2 Instances", canvas.width() / 2, 10);
+
+    if (selectableCount == 0) {
+      canvas.setTextDatum(middle_center);
+      canvas.setTextColor(DIM_COLOR);
+      canvas.drawString("No instances found", canvas.width() / 2, canvas.height() / 2);
+      canvas.setTextDatum(bottom_center);
+      canvas.setTextColor(FG_COLOR);
+      canvas.drawString("[R] Refresh  [Esc] Back", canvas.width() / 2, canvas.height() - 10);
+      canvas.pushSprite(0, 0);
+      delay(10);
+      continue;
+    }
     
     // Selection box glow
     draw_glow_rect(8, (int)anim_y, canvas.width() - 16, 24);
@@ -1426,14 +1629,14 @@ void show_ec2_ui() {
       canvas.fillCircle(18, y + 12, 4, state_color);
       
       canvas.setTextColor(is_sel ? TFT_WHITE : FG_COLOR);
-      String name = String(idx + 1) + ": " + String(list[idx].name);
+      String name = String(list[idx].name);
       if (name.length() > 24) name = name.substring(0, 24);
       canvas.drawString(name, 28, y + 12);
     }
     
     canvas.setTextDatum(bottom_center);
     canvas.setTextColor(FG_COLOR);
-    canvas.drawString(String(selected_idx + 1) + "/" + String(selectableCount) + " [T]oggle [Esc] Back", canvas.width() / 2, canvas.height() - 10);
+    canvas.drawString(" [Enter]=Actions [R]=Refresh", canvas.width() / 2, canvas.height() - 10);
     
     canvas.pushSprite(0, 0);
     delay(10); // tight loop for animation
@@ -1480,29 +1683,39 @@ void device_settings_ui() {
   int selected_idx = 0;
   const int max_settings = 8;
   float anim_y = 20;
+  int top_index = 0;
 
   auto draw_settings_menu = [&](){
-    float target_y = 16 + selected_idx * 12;
+    const int content_start = 32; // leave space for title and battery
+    const int bottom_margin = 20;
+    const int line_h = 12;
+    int avail_h = canvas.height() - content_start - bottom_margin;
+    int visible_count = max(1, avail_h / line_h);
+    if (visible_count > max_settings) visible_count = max_settings;
+
+    // Ensure top_index keeps selected visible
+    if (selected_idx < top_index) top_index = selected_idx;
+    if (selected_idx >= top_index + visible_count) top_index = selected_idx - visible_count + 1;
+
+    float target_y = content_start + (selected_idx - top_index) * line_h;
     if (abs(anim_y - target_y) > 0.5) anim_y += (target_y - anim_y) * 0.3;
     else anim_y = target_y;
 
     canvas.fillScreen(BG_COLOR);
     draw_glow_rect(4, 4, canvas.width() - 8, canvas.height() - 8);
-    
+
     // Draw Settings title and battery indicator on navbar
     canvas.setTextColor(ACCENT_COLOR);
     canvas.setTextDatum(top_left);
-    canvas.drawString("Settings", 10, 4);
-    
-    // Draw battery indicator at top right
+    canvas.drawString("Settings", 10, 12);
     draw_battery_indicator(canvas.width() - 8, 8);
-    
+
     // Draw selection box
-    draw_glow_rect(8, (int)anim_y, canvas.width() - 16, 12);
-    canvas.fillRoundRect(8, (int)anim_y, canvas.width() - 16, 12, 2, canvas.color565(10, 30, 50));
-    
-    canvas.setTextDatum(top_left);
-    
+    draw_glow_rect(8, (int)anim_y, canvas.width() - 16, line_h);
+    canvas.fillRoundRect(8, (int)anim_y, canvas.width() - 16, line_h, 2, canvas.color565(10, 30, 50));
+
+    canvas.setTextDatum(middle_left);
+
     String options[8] = {
       "URL: " + String(url_buf).substring(0, 25),
       "Device: " + String(device_buf),
@@ -1514,11 +1727,28 @@ void device_settings_ui() {
       "Save & Exit"
     };
 
-    for (int i = 0; i < 8; i++) {
-       canvas.setTextColor(i == selected_idx ? TFT_WHITE : (i >= 5 ? ACCENT_COLOR : DIM_COLOR));
-       canvas.drawString(options[i], 12, 18 + i * 12);
+    // Draw visible options (centered vertically within each line)
+    for (int i = 0; i < visible_count; i++) {
+      int idx = top_index + i;
+      if (idx >= max_settings) break;
+      bool is_sel = (idx == selected_idx);
+      canvas.setTextColor(is_sel ? TFT_WHITE : (idx >= 5 ? ACCENT_COLOR : DIM_COLOR));
+      int ty = content_start + i * line_h + (line_h / 2);
+      canvas.drawString(options[idx], 12, ty);
     }
-    
+
+    // Draw scrollbar if needed
+    if (visible_count < max_settings) {
+      int sb_x = canvas.width() - 14;
+      int sb_y = content_start;
+      int track_h = canvas.height() - content_start - bottom_margin;
+      canvas.drawRect(sb_x, sb_y, 8, track_h, DIM_COLOR);
+      int thumb_h = max(6, (track_h * visible_count) / max_settings);
+      int max_scroll = max_settings - visible_count;
+      int thumb_pos = max_scroll > 0 ? (top_index * (track_h - thumb_h) / max_scroll) : 0;
+      canvas.fillRect(sb_x + 1, sb_y + thumb_pos + 1, 6, thumb_h - 2, ACCENT_COLOR);
+    }
+
     canvas.setTextDatum(bottom_center);
     canvas.setTextColor(FG_COLOR);
     canvas.drawString("[W/S] Nav  [Enter] Edit  [Esc] Back", canvas.width() / 2, canvas.height() - 10);
@@ -1680,20 +1910,22 @@ bool run_wifi_setup() {
     clear_display();
     show_status_line(0, String(n) + " networks found", TFT_CYAN);
 
-    int listStartLine = 1;
-    int promptLine = min(10, (M5Cardputer.Display.height() - 16) / 12);
-    int visibleSlots = max(0, promptLine - listStartLine);
-    int displayCount = min(min(n, maxDisplay), visibleSlots);
+    const int promptLine = 8;
+    int displayCount = min(n, maxDisplay);
+    int drawY = 40;
+    int entriesDrawn = 0;
     for (int i = 0; i < displayCount; ++i) {
       String ssid = WiFi.SSID(i);
-      if (ssid.length() > 18) ssid = ssid.substring(0, 18);
-      show_status_line(listStartLine + i, String(i + 1) + ": " + ssid);
+      int linesUsed = draw_wifi_list_entry(10, drawY, canvas.width() - 20, i, ssid, FG_COLOR);
+      drawY += linesUsed * 12;
+      entriesDrawn++;
+      if (drawY >= canvas.height() - 24) break;
     }
-    if (displayCount > 0) {
-      show_status_line(promptLine, "1-" + String(displayCount) + " select R rescan Esc back", TFT_CYAN);
+    if (entriesDrawn > 0) {
+      show_status_line(promptLine, "1-" + String(entriesDrawn) + " select R rescan Esc back", TFT_CYAN);
     } else {
       show_status_line(2, "No networks found", TFT_YELLOW);
-      show_status_line(3, "R rescan  Esc back", TFT_CYAN);
+      show_status_line(3, "R=Rescan  Esc=Back", TFT_CYAN);
     }
 
     wait_for_key_release();
@@ -1701,16 +1933,16 @@ bool run_wifi_setup() {
     while ((millis() - selectStart) < 120000) {
       M5Cardputer.update();
       InputKey typed = read_input_key();
-      if (typed.type == InputKeyType::Printable && typed.value >= '1' && typed.value < ('1' + displayCount)) {
+      if (typed.type == InputKeyType::Printable && typed.value >= '1' && typed.value < ('1' + entriesDrawn)) {
         selected_ssid = WiFi.SSID(typed.value - '1');
         break;
       }
       if (typed.type == InputKeyType::Escape) return false;
       if (input_matches(typed, 'r')) break;
       if (typed.type == InputKeyType::Printable && typed.value >= '1' && typed.value <= '9') {
-        show_status_line(promptLine, "Use 1-" + String(displayCount), TFT_YELLOW);
+        show_status_line(promptLine, "Use 1-" + String(entriesDrawn), TFT_YELLOW);
         delay(500);
-        if (displayCount > 0) show_status_line(promptLine, "1-" + String(displayCount) + " select R rescan Esc back", TFT_CYAN);
+        if (entriesDrawn > 0) show_status_line(promptLine, "1-" + String(entriesDrawn) + " select R rescan Esc back", TFT_CYAN);
       }
       delay(20);
     }
@@ -1719,9 +1951,9 @@ bool run_wifi_setup() {
   char password_buf[MAX_PASSWORD_LEN] = {0};
   size_t pos = 0;
   clear_display();
-  show_status_line(0, "SSID: " + selected_ssid, TFT_CYAN);
+  draw_wrapped_wifi_line(10, 20, canvas.width() - 20, "SSID: ", selected_ssid, TFT_CYAN);
   show_status_line(1, "Password:");
-  show_status_line(3, "Enter=connect Esc=cancel");
+  show_status_line(4, "Enter=connect Esc=cancel");
 
   while (true) {
     M5Cardputer.update();
@@ -1742,22 +1974,45 @@ bool run_wifi_setup() {
     delay(10);
   }
 
-  clear_display();
-  show_status_line(0, "Connecting...", TFT_CYAN);
-  show_status_line(1, selected_ssid);
   WiFi.disconnect(true);
   delay(200);
   WiFi.mode(WIFI_STA);
   WiFi.begin(selected_ssid.c_str(), password_buf);
 
   unsigned long start = millis();
+  unsigned long last_draw = 0;
   while (WiFi.status() != WL_CONNECTED && (millis() - start) < WIFI_CONNECT_TIMEOUT_MS) {
     M5Cardputer.update();
-    delay(200);
+    unsigned long now = millis();
+    if (now - last_draw >= 200) {
+      last_draw = now;
+      draw_wifi_loading_screen(selected_ssid, now - start, WIFI_CONNECT_TIMEOUT_MS, "Connecting...");
+    }
+    // Allow cancel while trying
+    InputKey in = read_input_key();
+    if (in.type == InputKeyType::Escape) {
+      WiFi.disconnect();
+      clear_display();
+      show_status_line(3, "Cancelled", TFT_YELLOW);
+      delay(500);
+      return false;
+    }
+    delay(20);
   }
 
   if (WiFi.status() != WL_CONNECTED) {
-    show_status_line(3, "Connect failed", TFT_RED);
+    int st = WiFi.status();
+    if (st == WL_CONNECT_FAILED) {
+      draw_wifi_loading_screen(selected_ssid, WIFI_CONNECT_TIMEOUT_MS, WIFI_CONNECT_TIMEOUT_MS, "Wrong password");
+      delay(800);
+      clear_display();
+      show_status_line(3, "Wrong password", TFT_RED);
+    } else {
+      draw_wifi_loading_screen(selected_ssid, WIFI_CONNECT_TIMEOUT_MS, WIFI_CONNECT_TIMEOUT_MS, "Connect failed");
+      delay(800);
+      clear_display();
+      show_status_line(3, "Connect failed", TFT_RED);
+    }
     delay(1000);
     return false;
   }
@@ -1778,10 +2033,154 @@ bool run_wifi_setup() {
     }
   }
 
+  clear_display();
   show_status_line(3, "Connected", TFT_GREEN);
   show_status_line(4, WiFi.localIP().toString(), TFT_GREEN);
   start_config_server();
   delay(1000);
+  return true;
+}
+
+static bool load_saved_wifi_credentials(char* ssid, size_t ssid_len, char* password, size_t password_len) {
+  if (ssid_len == 0 || password_len == 0) return false;
+
+  ssid[0] = '\0';
+  password[0] = '\0';
+
+  if (sd_ok && SD.exists("/wifi.conf")) {
+    File f = SD.open("/wifi.conf");
+    if (f) {
+      while (f.available()) {
+        String line = f.readStringUntil('\n');
+        line.replace("\r", "");
+        line.replace("\n", "");
+        if (line.startsWith("ssid=")) {
+          String v = line.substring(5);
+          v.toCharArray(ssid, ssid_len);
+        } else if (line.startsWith("password=")) {
+          String v = line.substring(9);
+          v.toCharArray(password, password_len);
+        }
+      }
+      f.close();
+      if (ssid[0] != '\0') return true;
+    }
+  }
+
+  Preferences prefs;
+  if (prefs.begin("wifi", true)) {
+    String s = prefs.getString("ssid", "");
+    String p = prefs.getString("password", "");
+    if (s.length() > 0) {
+      s.toCharArray(ssid, ssid_len);
+      p.toCharArray(password, password_len);
+      prefs.end();
+      return true;
+    }
+    prefs.end();
+  }
+
+  return false;
+}
+
+static void clear_saved_wifi_credentials() {
+  Preferences wifiPrefs;
+  if (wifiPrefs.begin("wifi", false)) {
+    wifiPrefs.remove("ssid");
+    wifiPrefs.remove("password");
+    wifiPrefs.end();
+  }
+
+  if (sd_ok && SD.exists("/wifi.conf")) {
+    SD.remove("/wifi.conf");
+  }
+}
+
+static void draw_wifi_loading_screen(const String& ssid, unsigned long elapsed_ms, unsigned long timeout_ms, const String& status) {
+  clear_display();
+  draw_glow_rect(4, 4, canvas.width() - 8, canvas.height() - 8);
+  draw_battery_indicator(canvas.width() - 8, 8);
+
+  canvas.setTextDatum(top_center);
+  canvas.setTextColor(ACCENT_COLOR);
+  canvas.drawString("POCKETCLOUD", canvas.width() / 2, 12);
+
+  canvas.setTextDatum(middle_center);
+  canvas.setTextColor(FG_COLOR);
+  canvas.drawString("Connecting WiFi", canvas.width() / 2, 42);
+  canvas.setTextColor(DIM_COLOR);
+  canvas.drawString(ssid.length() > 0 ? ssid : String("Saved network"), canvas.width() / 2, 58);
+
+  const int bar_x = 18;
+  const int bar_y = 78;
+  const int bar_w = canvas.width() - 36;
+  const int bar_h = 6;
+  float progress = timeout_ms > 0 ? constrain((float)elapsed_ms / (float)timeout_ms, 0.0f, 1.0f) : 0.0f;
+  canvas.drawRect(bar_x, bar_y, bar_w, bar_h, DIM_COLOR);
+  canvas.fillRect(bar_x + 1, bar_y + 1, (int)((bar_w - 2) * progress), bar_h - 2, ACCENT_COLOR);
+
+  canvas.setTextColor(ACCENT_COLOR);
+  canvas.drawString(status, canvas.width() / 2, 96);
+
+  canvas.setTextColor(DIM_COLOR);
+  canvas.drawString(String((int)(progress * 100)) + "%", canvas.width() / 2, 110);
+
+  canvas.pushSprite(0, 0);
+}
+
+static bool saved_wifi_network_available(const char* ssid) {
+  if (ssid == nullptr || ssid[0] == '\0') return false;
+
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect(true);
+  delay(100);
+
+  int networkCount = WiFi.scanNetworks(false, true);
+  bool found = false;
+  for (int i = 0; i < networkCount; ++i) {
+    if (WiFi.SSID(i).equals(ssid)) {
+      found = true;
+      break;
+    }
+  }
+
+  WiFi.scanDelete();
+  return found;
+}
+
+static bool connect_wifi_after_boot(const char* ssid, const char* password) {
+  if (ssid == nullptr || ssid[0] == '\0') return false;
+
+  if (!saved_wifi_network_available(ssid)) {
+    WiFi.disconnect(true);
+    return false;
+  }
+
+  WiFi.mode(WIFI_STA);
+  WiFi.setAutoReconnect(true);
+  WiFi.begin(ssid, password);
+
+  const unsigned long start = millis();
+  unsigned long last_draw = 0;
+
+  while (WiFi.status() != WL_CONNECTED && (millis() - start) < WIFI_CONNECT_TIMEOUT_MS) {
+    M5Cardputer.update();
+    unsigned long now = millis();
+    if (now - last_draw >= 200) {
+      last_draw = now;
+      draw_wifi_loading_screen(String(ssid), now - start, WIFI_CONNECT_TIMEOUT_MS, "Using saved credentials");
+    }
+    delay(20);
+  }
+
+  if (WiFi.status() != WL_CONNECTED) {
+    draw_wifi_loading_screen(String(ssid), WIFI_CONNECT_TIMEOUT_MS, WIFI_CONNECT_TIMEOUT_MS, "Auto-connect failed");
+    delay(800);
+    return false;
+  }
+
+  draw_wifi_loading_screen(String(ssid), WIFI_CONNECT_TIMEOUT_MS, WIFI_CONNECT_TIMEOUT_MS, "WiFi connected");
+  delay(500);
   return true;
 }
 
@@ -1865,7 +2264,7 @@ static void draw_pocketcloud_premium(int x, int y, int size, uint16_t color, int
 // (Removed - using simpler WiFi pulse instead)
 
 // Draw smooth WiFi indicator with pulse animation
-static void draw_wifi_pulse(int x, int y, int frame, uint16_t color) {
+static void draw_center_pulse(int x, int y, int frame, uint16_t color) {
   float cycle = (frame % 32) / 32.0f;
   float pulse = ease_out_circ(cycle);
   
@@ -1940,7 +2339,7 @@ static void draw_connection_lines(int x1, int y1, int x2, int y2, int frame, uin
 
 void play_boot_animation() {
   const int PHASE1_FRAMES = 48;  // Intro with tech grid
-  const int PHASE2_FRAMES = 60;  // WiFi connection
+  const int PHASE2_FRAMES = 60;  // System transition
   const int PHASE3_FRAMES = 24;  // Final settle state
   
   // ===== PHASE 1: INTRO WITH TECH GRID AND LOGOS =====
@@ -2017,7 +2416,7 @@ void play_boot_animation() {
     delay(20);
   }
   
-  // ===== PHASE 2: WiFi CONNECTION WITH ANIMATIONS =====
+  // ===== PHASE 2: SYSTEM TRANSITION WITH ANIMATIONS =====
   for (int frame = 0; frame < PHASE2_FRAMES; frame++) {
     canvas.fillScreen(BG_COLOR);
     
@@ -2036,10 +2435,10 @@ void play_boot_animation() {
     
     // Draw glowing effect around center
     int center_x = canvas.width() / 2;
-    int center_y_wifi = canvas.height() / 2 + 5;
-    draw_wifi_pulse(center_x, center_y_wifi, frame, ACCENT_COLOR);
+    int center_y_pulse = canvas.height() / 2 + 5;
+    draw_center_pulse(center_x, center_y_pulse, frame, ACCENT_COLOR);
     
-    // Progress bar
+    // Progress bar for the boot sequence
     int bar_width = canvas.width() - 30;
     int bar_x = 15;
     int bar_y = canvas.height() - 25;
@@ -2097,7 +2496,6 @@ void setup()
   M5Cardputer.Display.setTextSize(1);
   init_theme();
   
-  // Try to load WiFi credentials from SD card first
   static char ssid[MAX_SSID_LEN] = {0};
   static char password[MAX_PASSWORD_LEN] = {0};
   bool haveCredentials = false;
@@ -2111,54 +2509,18 @@ void setup()
   }
 #endif
 
-  // Load WiFi credentials from SD card first
-  if (sd_ok && SD.exists("/wifi.conf")) {
-    File f = SD.open("/wifi.conf");
-    if (f) {
-      while (f.available()) {
-        String line = f.readStringUntil('\n');
-        line.replace("\r", "");
-        line.replace("\n", "");
-        if (line.startsWith("ssid=")) {
-          String v = line.substring(5);
-          v.toCharArray(ssid, MAX_SSID_LEN);
-        } else if (line.startsWith("password=")) {
-          String v = line.substring(9);
-          v.toCharArray(password, MAX_PASSWORD_LEN);
-        }
-      }
-      f.close();
-      if (ssid[0] != '\0') haveCredentials = true;
-    }
-  }
-
-  // If no SD credentials, check Preferences (non-volatile storage)
-  if (!haveCredentials) {
-    Preferences prefs;
-    if (prefs.begin("wifi", true)) {
-      String s = prefs.getString("ssid", "");
-      String p = prefs.getString("password", "");
-      if (s.length() > 0) {
-        s.toCharArray(ssid, MAX_SSID_LEN);
-        p.toCharArray(password, MAX_PASSWORD_LEN);
-        haveCredentials = true;
-      }
-      prefs.end();
-    }
-  }
-
-  // START WiFi CONNECTION BEFORE BOOT ANIMATION
-  // This allows WiFi to connect while the boot animation plays
-  if (haveCredentials) {
-    WiFi.mode(WIFI_STA);
-    WiFi.setAutoReconnect(true);  // Enable automatic reconnection
-    WiFi.begin(ssid, password);
-  }
-  
-  // Play boot animation while WiFi connects in background
   play_boot_animation();
-  
-  clear_display();
+
+  haveCredentials = load_saved_wifi_credentials(ssid, sizeof(ssid), password, sizeof(password));
+
+  bool wifi_connected = false;
+  if (haveCredentials) {
+    wifi_connected = connect_wifi_after_boot(ssid, password);
+  }
+
+  if (!haveCredentials || !wifi_connected) {
+    run_wifi_setup();
+  }
 
   // Optional: import EC2 proxy settings from SD on boot if present.
   Ec2Settings bootEc2;
@@ -2166,6 +2528,8 @@ void setup()
   if (load_ec2_settings_from_sd(&bootEc2, true)) {
     // Imported silently at boot.
   }
+
+  clear_display();
 
   // Start config server if WiFi is connected
   if (WiFi.status() == WL_CONNECTED) {

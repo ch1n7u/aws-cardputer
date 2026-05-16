@@ -16,7 +16,7 @@ Resources:
   Ec2ProxyFunction:
     Type: AWS::Serverless::Function
     Properties:
-      CodeUri: lambda/ec2_proxy/
+      CodeUri: .
       Handler: handler.lambda_handler
       Runtime: python3.11
       Timeout: 30
@@ -41,6 +41,7 @@ Resources:
               Action:
                 - ec2:StartInstances
                 - ec2:StopInstances
+                - ec2:RebootInstances
               Resource: !If
                 - UseRestrictedInstances
                 - !Split [",", !Ref AllowedInstanceArns]
@@ -88,6 +89,12 @@ Resources:
           Properties:
             RestApiId: !Ref Ec2ProxyApi
             Path: /instances/{instanceId}/stop
+            Method: post
+        InstanceRebootApi:
+          Type: Api
+          Properties:
+            RestApiId: !Ref Ec2ProxyApi
+            Path: /instances/{instanceId}/reboot
             Method: post
 
   DeviceSessionTable:

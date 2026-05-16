@@ -41,6 +41,17 @@ def test_start_instance(mock_start, _mock_validate):
     mock_start.assert_called_once()
 
 
+@patch("handler._validate_access_token", return_value=True)
+@patch("handler.reboot_instance")
+def test_reboot_instance(mock_reboot, _mock_validate):
+    resp = lambda_handler(
+        _event("POST", "/instances/i-1234567890abcdef0/reboot", "/instances/{instanceId}/reboot"),
+        None,
+    )
+    assert resp["statusCode"] == 200
+    mock_reboot.assert_called_once()
+
+
 @patch("handler._validate_access_token", return_value=False)
 def test_unauthorized(_mock_validate):
     evt = _event("GET", "/instances", "/instances", token="bad-token")

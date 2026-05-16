@@ -5,19 +5,47 @@ param(
   [Parameter(Mandatory=$true)]
   [string]$Region,
 
-  [Parameter(Mandatory=$true)]
-  [string]$AdminToken,
+  [string]$AdminToken = "",
 
-  [Parameter(Mandatory=$true)]
-  [string]$PairCode,
+  [string]$PairCode = "",
 
-  [Parameter(Mandatory=$true)]
-  [string]$TokenSigningKey,
+  [string]$TokenSigningKey = "",
 
   [string]$AllowedInstanceArns = ""
 )
 
 $ErrorActionPreference = 'Stop'
+
+Push-Location $PSScriptRoot
+
+try {
+
+function New-RandomSecret {
+  param(
+    [Parameter(Mandatory=$true)]
+    [int]$ByteCount
+  )
+
+  $bytes = New-Object byte[] $ByteCount
+  [System.Security.Cryptography.RandomNumberGenerator]::Create().GetBytes($bytes)
+  $secret = [Convert]::ToBase64String($bytes)
+  return ($secret -replace '[^a-zA-Z0-9]', '')
+}
+
+if (-not $AdminToken) {
+  $AdminToken = New-RandomSecret -ByteCount 32
+  Write-Host "Generated AdminToken: $AdminToken"
+}
+
+if (-not $PairCode) {
+  $PairCode = New-RandomSecret -ByteCount 16
+  Write-Host "Generated PairCode: $PairCode"
+}
+
+if (-not $TokenSigningKey) {
+  $TokenSigningKey = New-RandomSecret -ByteCount 32
+  Write-Host "Generated TokenSigningKey: $TokenSigningKey"
+}
 
 $samCommand = $null
 foreach ($candidate in @('sam', 'sam.cmd', 'sam.exe')) {
@@ -50,3 +78,8 @@ if ($AllowedInstanceArns -ne "") {
   --resolve-s3 `
   --template-file .aws-sam/build/template.yaml `
   --parameter-overrides $paramOverrides
+
+}
+finally {
+  Pop-Location
+}
