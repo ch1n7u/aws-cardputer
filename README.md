@@ -109,6 +109,8 @@ If you want to provide your own values instead of auto-generated secrets:
 .\deploy.ps1 -StackName "ec2-proxy-stack" -Region "ap-south-1" -AdminToken "YOUR_ADMIN_TOKEN" -PairCode "YOUR_PAIR_CODE" -TokenSigningKey "YOUR_TOKEN_SIGNING_KEY"
 ```
 
+After the script completes it will print only the `AdminToken`, `PairCode`, and the API Gateway URL. Please save the `AdminToken` and `PairCode` and update the device configuration in the web interface.
+
 4. If you need to run the SAM build manually, use:
 
 ```powershell
@@ -150,8 +152,6 @@ Settings can be exported/imported using an SD card with an `/ec2.conf` file.
 - **Display Constraints**: The UI displays abbreviated instance names to fit the Cardputer screen.
 - **Wi-Fi Bands**: Only supports 2.4GHz Wi-Fi.
 
-## Roadmap
-
 **Planned Features:**
 - SSH terminal access integration
 - Command relay mode
@@ -160,9 +160,6 @@ Settings can be exported/imported using an SD card with an `/ec2.conf` file.
 ## Contributing
 
 Contributions are welcome! Please adhere to standard pull request workflows and ensure the firmware builds successfully before submitting changes.
-
-**Main Contributor:**
-- [Arka Dey (ch1n7u)](https://github.com/ch1n7u)
 
 ## License
 
