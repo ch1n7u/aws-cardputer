@@ -12,14 +12,6 @@ PocketCloud Terminal turns your M5Stack Cardputer into a portable EC2 remote con
 
 Cardputer -> Wi-Fi -> Authentication -> API Gateway + Lambda -> AWS EC2
 
-### Prerequisites
-
-Before deploying the backend proxy, ensure you have set up your AWS environment:
-1. **AWS Account**: You need an active AWS Account.
-2. **IAM User**: Create an IAM User with AdministratorAccess, or equivalent permissions for CloudFormation, Lambda, API Gateway, IAM, and DynamoDB.
-3. **AWS CLI Setup**: Install the [AWS CLI](https://aws.amazon.com/cli/) and run `aws configure` to set your `AWS Access Key ID`, `AWS Secret Access Key`, and default region name, for example `ap-south-1`.
-4. **AWS SAM CLI**: Install the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html).
-
 ## Project Structure
 
 ```text
