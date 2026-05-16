@@ -161,6 +161,9 @@ Settings can be exported/imported using an SD card with an `/ec2.conf` file.
 
 Contributions are welcome! Please adhere to standard pull request workflows and ensure the firmware builds successfully before submitting changes.
 
+**Main Contributor:**
+- [Arka Dey (ch1n7u)](https://github.com/ch1n7u)
+
 ## License
 
-Respect repository license. Please see the root directory for any LICENSE files.
+This project is open-source and licensed under the MIT License.
