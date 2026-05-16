@@ -18,47 +18,6 @@ Before deploying the backend proxy, ensure you have set up your AWS environment:
 3. **AWS CLI Setup**: Install the [AWS CLI](https://aws.amazon.com/cli/) and run `aws configure` to set your `AWS Access Key ID`, `AWS Secret Access Key`, and default region name, for example `ap-south-1`.
 4. **AWS SAM CLI**: Install the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html).
 
-### Deployment Steps
-
-1. Open PowerShell and, if script execution is restricted, allow local scripts for this session:
-
-```powershell
-Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
-```
-
-2. Change into the backend deployment folder:
-
-```powershell
-cd .\lambda\ec2_proxy
-```
-
-3. Deploy the stack. The script runs `sam build` and `sam deploy` for you, and it generates missing secrets if you do not pass them:
-
-```powershell
-.
-- PlatformIO IDE extension or CLI
-```
-
-If you want to provide your own values instead of auto-generated secrets:
-
-```powershell
-.
-- AWS CLI v2 (for backend deployment)
-```
-
-4. If you need to run the SAM build manually, use:
-
-```powershell
-sam build --template-file template.yaml
-```
-
-5. Copy the `Ec2ProxyApiEndpoint` value from the deployment output and enter it into the device configuration.
-
-Example output values are shown in [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) if you want a full Windows setup walkthrough.
-- AWS SAM CLI (for backend deployment)
-- Python 3.11+
-- Git
-
 ## Project Structure
 
 ```text
@@ -123,6 +82,42 @@ Before deploying the backend proxy, ensure you have set up your AWS environment:
 2. **IAM User**: Create an IAM User with AdministratorAccess, or equivalent permissions for CloudFormation, Lambda, API Gateway, IAM, and DynamoDB.
 3. **AWS CLI Setup**: Install the [AWS CLI](https://aws.amazon.com/cli/) and run `aws configure` to set your `AWS Access Key ID`, `AWS Secret Access Key`, and default region name, for example `ap-south-1`.
 4. **AWS SAM CLI**: Install the [AWS SAM CLI](https://docs.aws.amazon.com/serverless-application-model/latest/developerguide/install-sam-cli.html).
+
+### Deployment Steps
+
+1. Open PowerShell and, if script execution is restricted, allow local scripts for this session:
+
+```powershell
+Set-ExecutionPolicy -ExecutionPolicy RemoteSigned -Scope CurrentUser
+```
+
+2. Change into the backend deployment folder:
+
+```powershell
+cd .\lambda\ec2_proxy
+```
+
+3. Deploy the stack. The script runs `sam build` and `sam deploy` for you, and it generates missing secrets if you do not pass them:
+
+```powershell
+.\deploy.ps1 -StackName "ec2-proxy-stack" -Region "ap-south-1"
+```
+
+If you want to provide your own values instead of auto-generated secrets:
+
+```powershell
+.\deploy.ps1 -StackName "ec2-proxy-stack" -Region "ap-south-1" -AdminToken "YOUR_ADMIN_TOKEN" -PairCode "YOUR_PAIR_CODE" -TokenSigningKey "YOUR_TOKEN_SIGNING_KEY"
+```
+
+4. If you need to run the SAM build manually, use:
+
+```powershell
+sam build --template-file template.yaml
+```
+
+5. Copy the `Ec2ProxyApiEndpoint` value from the deployment output and enter it into the device configuration.
+
+Example output values are shown in [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) if you want a full Windows setup walkthrough.
 
 ## Device Configuration
 
