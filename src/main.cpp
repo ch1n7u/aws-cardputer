@@ -367,9 +367,6 @@ struct Ec2Settings {
   char token[128]; // legacy static bearer token fallback
   char pairCode[32];
   char deviceId[32];
-  char awsAccessKey[32];
-  char awsSecretKey[64];
-  char awsRegion[24];
   char accessToken[256];
   char refreshToken[256];
   char pin[16];
@@ -453,9 +450,6 @@ void load_ec2_settings(Ec2Settings* out) {
     String tokenEnc = safe_get("token_enc");
     String pairEnc = safe_get("pair_code_enc");
     String devId = safe_get("device_id");
-    String awsAccessEnc = safe_get("aws_access_enc");
-    String awsSecretEnc = safe_get("aws_secret_enc");
-    String awsRegion = safe_get("aws_region");
     String accessEnc = safe_get("access_token_enc");
     String refreshEnc = safe_get("refresh_token_enc");
     String pinEnc = safe_get("pin_enc");
@@ -468,9 +462,6 @@ void load_ec2_settings(Ec2Settings* out) {
     if (t.length() > 0) t.toCharArray(out->token, sizeof(out->token));
     if (pc.length() > 0) pc.toCharArray(out->pairCode, sizeof(out->pairCode));
     if (devId.length() > 0) devId.toCharArray(out->deviceId, sizeof(out->deviceId));
-    if (awsAccessEnc.length() > 0) _xor_hex_decode(awsAccessEnc).toCharArray(out->awsAccessKey, sizeof(out->awsAccessKey));
-    if (awsSecretEnc.length() > 0) _xor_hex_decode(awsSecretEnc).toCharArray(out->awsSecretKey, sizeof(out->awsSecretKey));
-    if (awsRegion.length() > 0) awsRegion.toCharArray(out->awsRegion, sizeof(out->awsRegion));
     if (at.length() > 0) at.toCharArray(out->accessToken, sizeof(out->accessToken));
     if (rt.length() > 0) rt.toCharArray(out->refreshToken, sizeof(out->refreshToken));
     if (p.length() > 0) p.toCharArray(out->pin, sizeof(out->pin));
@@ -486,9 +477,6 @@ bool save_ec2_settings_to_prefs(const Ec2Settings* settings) {
   prefs.putString("token_enc", _xor_hex_encode(settings->token));
   prefs.putString("pair_code_enc", _xor_hex_encode(settings->pairCode));
   prefs.putString("device_id", String(settings->deviceId));
-  prefs.putString("aws_access_enc", _xor_hex_encode(settings->awsAccessKey));
-  prefs.putString("aws_secret_enc", _xor_hex_encode(settings->awsSecretKey));
-  prefs.putString("aws_region", String(settings->awsRegion));
   prefs.putString("access_token_enc", _xor_hex_encode(settings->accessToken));
   prefs.putString("refresh_token_enc", _xor_hex_encode(settings->refreshToken));
   prefs.putULong("access_exp_ms", settings->accessExpiryMs);
@@ -631,24 +619,11 @@ static void send_config_page(const String& notice = "", bool error = false) {
   html += html_escape(String(settings.url));
   html += F("' placeholder='https://abc123.execute-api.region.amazonaws.com/Prod'>");
   html += F("<label>Pair code</label><input name='pair_code' type='password' placeholder='Leave blank to keep current pair code'>");
-  html += F("<div class='row'><input id='clear_pair' name='clear_pair' type='checkbox' value='1'><label for='clear_pair'>Clear saved pair code</label></div>");
   html += F("<label>Legacy admin token</label><input name='token' type='password' placeholder='Leave blank to keep current token'>");
-  html += F("<div class='row'><input id='clear_token' name='clear_token' type='checkbox' value='1'><label for='clear_token'>Clear legacy token</label></div>");
   html += F("<label>Device ID</label><input name='device_id' value='");
   html += html_escape(String(settings.deviceId));
   html += F("'></section>");
-  html += F("<section><h2>Direct AWS Mode</h2>");
-  html += F("<label>AWS Region</label><input name='aws_region' value='");
-  html += html_escape(String(settings.awsRegion));
-  html += F("' placeholder='ap-south-1'>");
-  html += F("<label>AWS Access Key ID</label><input name='aws_access_key' value='");
-  html += html_escape(String(settings.awsAccessKey));
-  html += F("' placeholder='AKIA...'>");
-  html += F("<label>AWS Secret Access Key</label><input name='aws_secret_key' type='password' placeholder='Leave blank to keep current secret'>");
-  html += F("<div class='row'><input id='clear_aws' name='clear_aws' type='checkbox' value='1'><label for='clear_aws'>Clear direct AWS credentials</label></div>");
-  html += F("<small>Use a restricted IAM user with only EC2 describe/start/stop permissions.</small></section>");
-  html += F("<section><h2>Device Lock</h2><label>New 4-digit PIN</label><input name='pin_new' type='password' inputmode='numeric' maxlength='4' placeholder='Leave blank to keep current PIN'>");
-  html += F("<div class='row'><input id='clear_pin' name='clear_pin' type='checkbox' value='1'><label for='clear_pin'>Clear PIN</label></div></section>");
+  html += F("<section><h2>Device Lock</h2><label>New 4-digit PIN</label><input name='pin_new' type='password' inputmode='numeric' maxlength='4' placeholder='Leave blank to keep current PIN'></section>");
   html += F("<section><h2>WiFi</h2><label>SSID</label><input name='wifi_ssid' value='");
   html += html_escape(wifiSsid);
   html += F("'><label>Password</label><input name='wifi_password' type='password' placeholder='Leave blank to keep current password'>");
@@ -661,13 +636,10 @@ static void send_config_page(const String& notice = "", bool error = false) {
   html += settings.token[0] ? F("set") : F("empty");
   html += F("<br>Refresh token: ");
   html += settings.refreshToken[0] ? F("set") : F("empty");
-  html += F("<br>Direct AWS: ");
-  html += (settings.awsAccessKey[0] && settings.awsSecretKey[0] && settings.awsRegion[0]) ? F("set") : F("empty");
   html += F("<br>PIN: ");
   html += settings.pin[0] ? F("set") : F("empty");
   html += F("</p><p><a style='color:#8ab4ff' href='/ping'>Ping web server</a><br>");
-  html += F("<a style='color:#8ab4ff' href='/debug'>View debug status</a><br>");
-  html += F("<a style='color:#8ab4ff' href='/test'>Test AWS connection</a></p></section></main></body></html>");
+  html += F("<a style='color:#8ab4ff' href='/debug'>View debug status</a></p></section></main></body></html>");
   configServer.send(200, "text/html", html);
 }
 
@@ -683,9 +655,6 @@ static void handle_config_save() {
   String deviceId = form_value("device_id");
   String pairCode = form_value("pair_code");
   String token = form_value("token");
-  String awsRegion = form_value("aws_region");
-  String awsAccessKey = form_value("aws_access_key");
-  String awsSecretKey = form_value("aws_secret_key");
   String pinNew = form_value("pin_new");
   String wifiSsid = form_value("wifi_ssid");
   String wifiPassword = form_value("wifi_password");
@@ -695,9 +664,6 @@ static void handle_config_save() {
   deviceId.trim();
   pairCode.trim();
   token.trim();
-  awsRegion.trim();
-  awsAccessKey.trim();
-  awsSecretKey.trim();
   pinNew.trim();
 
   if (pinNew.length() > 0 && pinNew.length() != 4) {
@@ -719,24 +685,12 @@ static void handle_config_save() {
     url.toCharArray(settings.url, sizeof(settings.url));
   }
   if (deviceId.length() > 0) deviceId.toCharArray(settings.deviceId, sizeof(settings.deviceId));
-  if (configServer.hasArg("clear_pair")) settings.pairCode[0] = '\0';
-  else if (pairCode.length() > 0) pairCode.toCharArray(settings.pairCode, sizeof(settings.pairCode));
-  if (configServer.hasArg("clear_token")) settings.token[0] = '\0';
-  else if (token.length() > 0) token.toCharArray(settings.token, sizeof(settings.token));
-  if (configServer.hasArg("clear_aws")) {
-    settings.awsAccessKey[0] = '\0';
-    settings.awsSecretKey[0] = '\0';
-    settings.awsRegion[0] = '\0';
-  } else {
-    if (awsRegion.length() > 0) awsRegion.toCharArray(settings.awsRegion, sizeof(settings.awsRegion));
-    if (awsAccessKey.length() > 0) awsAccessKey.toCharArray(settings.awsAccessKey, sizeof(settings.awsAccessKey));
-    if (awsSecretKey.length() > 0) awsSecretKey.toCharArray(settings.awsSecretKey, sizeof(settings.awsSecretKey));
-  }
-  if (configServer.hasArg("clear_pin")) settings.pin[0] = '\0';
-  else if (pinNew.length() > 0) pinNew.toCharArray(settings.pin, sizeof(settings.pin));
+  if (pairCode.length() > 0) pairCode.toCharArray(settings.pairCode, sizeof(settings.pairCode));
+  if (token.length() > 0) token.toCharArray(settings.token, sizeof(settings.token));
+  if (pinNew.length() > 0) pinNew.toCharArray(settings.pin, sizeof(settings.pin));
 
   // Force re-pair/refresh when auth material changes.
-  if (pairCode.length() > 0 || token.length() > 0 || configServer.hasArg("clear_pair") || configServer.hasArg("clear_token")) {
+  if (pairCode.length() > 0 || token.length() > 0) {
     settings.accessToken[0] = '\0';
     settings.refreshToken[0] = '\0';
     settings.accessExpiryMs = 0;
@@ -760,49 +714,6 @@ static void handle_config_save() {
   send_config_page(forgetWifi ? "WiFi credentials removed." : "Settings saved.");
 }
 
-// Background task for running EC2 test from web handler
-static void ec2_test_task(void* /*pv*/) {
-  Serial.println("[EC2-Test] task started");
-  static EC2Instance list[MAX_INSTANCES];
-  int count = fetch_ec2_instances(list, MAX_INSTANCES);
-  if (count < 0) {
-    Serial.print("[EC2-Test] FAIL: ");
-    Serial.println(last_ec2_error.length() ? last_ec2_error : "unknown error");
-  } else {
-    Serial.print("[EC2-Test] OK: ");
-    Serial.print(count);
-    Serial.println(" instance(s)");
-    for (int i = 0; i < count; ++i) {
-      Serial.print(i + 1);
-      Serial.print(": ");
-      Serial.print(list[i].id);
-      Serial.print(" ");
-      Serial.print(list[i].state);
-      Serial.print(" ");
-      Serial.println(list[i].name);
-    }
-  }
-  Serial.println("[EC2-Test] task finished");
-  vTaskDelete(NULL);
-}
-
-static void handle_config_test() {
-  if (WiFi.status() != WL_CONNECTED) {
-    configServer.send(200, "text/plain", "FAIL: WiFi not connected");
-    return;
-  }
-
-  // Run instance fetch in a background FreeRTOS task to avoid blocking the web server
-  // TLS + HTTPClient + mbedTLS entropy can use a very large stack on ESP32-S3.
-  BaseType_t created = xTaskCreatePinnedToCore(ec2_test_task, "ec2_test", 32768, NULL, 1, NULL, 1);
-  if (created != pdPASS) {
-    Serial.println("[EC2] Failed to create test task");
-    configServer.send(500, "text/plain", "FAIL: unable to start test task");
-    return;
-  }
-  configServer.send(200, "text/plain", "OK: test started; check serial logs");
-}
-
 static void handle_config_ping() {
   configServer.send(200, "text/plain", "OK: web server is running");
 }
@@ -824,12 +735,6 @@ static void handle_config_debug() {
   out += settings.refreshToken[0] ? "set" : "empty";
   out += "\nAccess token: ";
   out += settings.accessToken[0] ? "set" : "empty";
-  out += "\nAWS region: ";
-  out += settings.awsRegion[0] ? String(settings.awsRegion) : "(empty)";
-  out += "\nAWS access key: ";
-  out += settings.awsAccessKey[0] ? "set" : "empty";
-  out += "\nAWS secret key: ";
-  out += settings.awsSecretKey[0] ? "set" : "empty";
   out += "\nPIN: ";
   out += settings.pin[0] ? "set" : "empty";
   out += "\nClock: ";
@@ -848,7 +753,6 @@ static void start_config_server() {
   configServer.on("/save", HTTP_POST, handle_config_save);
   configServer.on("/ping", HTTP_GET, handle_config_ping);
   configServer.on("/debug", HTTP_GET, handle_config_debug);
-  configServer.on("/test", HTTP_GET, handle_config_test);
   configServer.onNotFound([](){ configServer.sendHeader("Location", "/"); configServer.send(302, "text/plain", ""); });
   configServer.begin();
   config_server_started = true;
@@ -921,22 +825,6 @@ static String hmac_sha256_hex(const uint8_t* key, size_t keyLen, const String& d
   return hex_encode(out, sizeof(out));
 }
 
-static String aws_uri_encode(const String& value) {
-  const char* hex = "0123456789ABCDEF";
-  String out;
-  for (size_t i = 0; i < value.length(); ++i) {
-    char c = value[i];
-    if ((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.' || c == '~') {
-      out += c;
-    } else {
-      out += '%';
-      out += hex[(uint8_t)c >> 4];
-      out += hex[(uint8_t)c & 0x0F];
-    }
-  }
-  return out;
-}
-
 static String xml_value(const String& xml, const String& tag, int start = 0) {
   String open = "<" + tag + ">";
   String close = "</" + tag + ">";
@@ -946,136 +834,6 @@ static String xml_value(const String& xml, const String& tag, int start = 0) {
   int b = xml.indexOf(close, a);
   if (b < 0) return "";
   return xml.substring(a, b);
-}
-
-static bool aws_direct_request(const Ec2Settings& settings, const String& canonicalQuery, int* statusCode, String* responseBody) {
-  ec2_debug_append("EC2: direct AWS request start");
-  if (!sync_time_for_tls()) {
-    set_ec2_error("Clock sync failed");
-    return false;
-  }
-  if (settings.awsAccessKey[0] == '\0' || settings.awsSecretKey[0] == '\0' || settings.awsRegion[0] == '\0') {
-    set_ec2_error("Set AWS key/secret/region");
-    return false;
-  }
-
-  time_t now = time(nullptr);
-  struct tm tm_utc;
-  gmtime_r(&now, &tm_utc);
-  char amzDate[17];
-  char shortDate[9];
-  strftime(amzDate, sizeof(amzDate), "%Y%m%dT%H%M%SZ", &tm_utc);
-  strftime(shortDate, sizeof(shortDate), "%Y%m%d", &tm_utc);
-
-  String region = String(settings.awsRegion);
-  String host = "ec2." + region + ".amazonaws.com";
-  String payloadHash = sha256_hex("");
-  String canonicalHeaders = "host:" + host + "\n" + "x-amz-date:" + String(amzDate) + "\n";
-  String signedHeaders = "host;x-amz-date";
-  String canonicalRequest = "GET\n/\n" + canonicalQuery + "\n" + canonicalHeaders + "\n" + signedHeaders + "\n" + payloadHash;
-  String credentialScope = String(shortDate) + "/" + region + "/ec2/aws4_request";
-  String stringToSign = "AWS4-HMAC-SHA256\n" + String(amzDate) + "\n" + credentialScope + "\n" + sha256_hex(canonicalRequest);
-
-  uint8_t kDate[32], kRegion[32], kService[32], kSigning[32];
-  String secret = "AWS4" + String(settings.awsSecretKey);
-  hmac_sha256(reinterpret_cast<const uint8_t*>(secret.c_str()), secret.length(), String(shortDate), kDate);
-  hmac_sha256(kDate, sizeof(kDate), region, kRegion);
-  hmac_sha256(kRegion, sizeof(kRegion), "ec2", kService);
-  hmac_sha256(kService, sizeof(kService), "aws4_request", kSigning);
-  String signature = hmac_sha256_hex(kSigning, sizeof(kSigning), stringToSign);
-
-  String authorization = "AWS4-HMAC-SHA256 Credential=" + String(settings.awsAccessKey) + "/" + credentialScope + ", SignedHeaders=" + signedHeaders + ", Signature=" + signature;
-  String url = "https://" + host + "/?" + canonicalQuery;
-
-  WiFiClientSecure client;
-  HTTPClient http;
-  client.setCACert(AWS_ROOT_CA1);
-  client.setTimeout(20000);
-  ec2_debug_append("EC2: direct AWS HTTP begin");
-  if (!http.begin(client, url)) {
-    set_ec2_error("Bad EC2 URL");
-    ec2_debug_append("EC2: direct AWS HTTP begin failed");
-    return false;
-  }
-  ec2_debug_append("EC2: direct AWS HTTP GET");
-  http.addHeader("X-Amz-Date", String(amzDate));
-  http.addHeader("Authorization", authorization);
-  int code = http.GET();
-  ec2_debug_append("EC2: direct AWS HTTP returned " + String(code));
-  String body = http.getString();
-  http.end();
-  *statusCode = code;
-  *responseBody = body;
-  if (code < 200 || code >= 300) {
-    String awsErr = xml_value(body, "Code");
-    set_ec2_error(awsErr.length() ? awsErr : "AWS HTTP " + String(code));
-    return false;
-  }
-  return true;
-}
-
-static int fetch_ec2_instances_direct(const Ec2Settings& settings, EC2Instance* out, int maxInstances) {
-  int code = -1;
-  String body;
-  show_status_line(0, "Direct AWS EC2...", TFT_CYAN);
-  if (!aws_direct_request(settings, "Action=DescribeInstances&Version=2016-11-15", &code, &body)) return -1;
-
-  int count = 0;
-  int pos = 0;
-  while (count < maxInstances) {
-    int itemStart = body.indexOf("<item>", pos);
-    if (itemStart < 0) break;
-    int itemEnd = body.indexOf("</item>", itemStart);
-    if (itemEnd < 0) break;
-    String item = body.substring(itemStart, itemEnd);
-    String instanceId = xml_value(item, "instanceId");
-    if (instanceId.startsWith("i-")) {
-      String stateBlock = item.substring(item.indexOf("<instanceState>"));
-      String state = xml_value(stateBlock, "name");
-      String name = "";
-      int tags = item.indexOf("<tagSet>");
-      if (tags >= 0) {
-        int tagPos = tags;
-        while (true) {
-          int ts = item.indexOf("<item>", tagPos);
-          if (ts < 0) break;
-          int te = item.indexOf("</item>", ts);
-          if (te < 0) break;
-          String tagItem = item.substring(ts, te);
-          if (xml_value(tagItem, "key") == "Name") {
-            name = xml_value(tagItem, "value");
-            break;
-          }
-          tagPos = te + 7;
-        }
-      }
-      if (name.length() == 0) name = instanceId;
-      instanceId.toCharArray(out[count].id, sizeof(out[count].id));
-      state.toCharArray(out[count].state, sizeof(out[count].state));
-      name.toCharArray(out[count].name, sizeof(out[count].name));
-      count++;
-    }
-    pos = itemEnd + 7;
-  }
-  return count;
-}
-
-static bool send_ec2_action_direct(const Ec2Settings& settings, const char* instanceId, const char* action) {
-  int code = -1;
-  String body;
-  String actionName;
-  if (strcmp(action, "start") == 0) {
-    actionName = "StartInstances";
-  } else if (strcmp(action, "stop") == 0) {
-    actionName = "StopInstances";
-  } else if (strcmp(action, "reboot") == 0) {
-    actionName = "RebootInstances";
-  } else {
-    set_ec2_error("Unknown action");
-    return false;
-  }
-  String query = "Action=" + actionName + "&InstanceId.1=" + aws_uri_encode(String(instanceId)) + "&Version=2016-11-15";
-  return aws_direct_request(settings, query, &code, &body);
 }
 
 void draw_masked_token(const char* token) {
@@ -1254,10 +1012,6 @@ int fetch_ec2_instances(EC2Instance *out, int maxInstances) {
     ec2_debug_append("EC2: WiFi not connected");
     return -1;
   }
-  if (settings.awsAccessKey[0] && settings.awsSecretKey[0] && settings.awsRegion[0]) {
-    ec2_debug_append("EC2: using direct AWS mode");
-    return fetch_ec2_instances_direct(settings, out, maxInstances);
-  }
   if (settings.url[0] == '\0' || String(settings.url).indexOf("REPLACE_WITH_API") >= 0) {
     set_ec2_error("Set API URL in web UI");
     ec2_debug_append("EC2: API URL missing");
@@ -1339,14 +1093,8 @@ bool send_ec2_action(const char *instanceId, const char *action) {
   Ec2Settings settings;
   load_ec2_settings(&settings);
   if (settings.url[0] == '\0') {
-    if (settings.awsAccessKey[0] && settings.awsSecretKey[0] && settings.awsRegion[0]) {
-      return send_ec2_action_direct(settings, instanceId, action);
-    }
     set_ec2_error("Set API URL");
     return false;
-  }
-  if (settings.awsAccessKey[0] && settings.awsSecretKey[0] && settings.awsRegion[0]) {
-    return send_ec2_action_direct(settings, instanceId, action);
   }
   String baseUrl = normalize_api_url(String(settings.url));
   if (!baseUrl.startsWith("https://")) {

@@ -109,17 +109,13 @@ If you want to provide your own values instead of auto-generated secrets:
 .\deploy.ps1 -StackName "ec2-proxy-stack" -Region "ap-south-1" -AdminToken "YOUR_ADMIN_TOKEN" -PairCode "YOUR_PAIR_CODE" -TokenSigningKey "YOUR_TOKEN_SIGNING_KEY"
 ```
 
-After the script completes it will print only the `AdminToken`, `PairCode`, and the API Gateway URL. Please save the `AdminToken` and `PairCode` and update the device configuration in the web interface.
+After the script completes it will print only the `AdminToken`, `PairCode`, and the API Gateway URL. Please save these values and update the device configuration in the web interface.
 
 4. If you need to run the SAM build manually, use:
 
 ```powershell
 sam build --template-file template.yaml
 ```
-
-5. Copy the `Ec2ProxyApiEndpoint` value from the deployment output and enter it into the device configuration.
-
-Example output values are shown in [DEPLOYMENT_GUIDE.md](DEPLOYMENT_GUIDE.md) if you want a full Windows setup walkthrough.
 
 ## Device Configuration
 
