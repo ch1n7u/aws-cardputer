@@ -12,6 +12,34 @@ PocketCloud Terminal turns your M5Stack Cardputer into a portable EC2 remote con
 
 Cardputer -> Wi-Fi -> Authentication -> API Gateway + Lambda -> AWS EC2
 
+## Technical Specifications
+
+### Hardware Requirements
+- **Device**: M5Stack Cardputer v1.1
+- **SoC**: ESP32-S3 (Xtensa dual-core @ 240MHz)
+- **Flash**: 8MB
+- **PSRAM**: 16MB
+- **Wi-Fi**: 2.4GHz only (ESP32-S3 does not support 5GHz)
+
+### Firmware Specifications
+| Parameter | Value |
+|-----------|-------|
+| Loop task stack | 32KB (increased for TLS + HTTPClient) |
+| Monitor speed | 115200 baud |
+| Flash speed | 921600 |
+| Partition scheme | default (8MB flash) |
+
+### Core Dependencies
+| Library | Version | Purpose |
+|---------|---------|---------|
+| M5Cardputer | ^1.1.1 | Cardputer hardware abstraction |
+| M5Unified | ^0.2.14 | Unified M5Stack API |
+| M5GFX | ^0.2.20 | Graphics rendering |
+| ArduinoJson | ^6.21.6 | JSON serialization |
+
+### Supported AWS Regions
+Any region with API Gateway and Lambda support. Ensure the Lambda function is deployed to the same region as your EC2 instances.
+
 ## Project Structure
 
 ```text
@@ -124,28 +152,135 @@ Settings can be exported/imported using an SD card with an `/ec2.conf` file.
 
 ## Security Model
 
-- **Proxy Auth**: Uses a pairing code exchange to retrieve short-lived access and refresh tokens, verified via HMAC SHA-256.
-- **Storage Security**: All credentials stored in Preferences NVS are XOR encoded using a hardware-specific MAC address key to prevent casual dumping.
-- **Access Control**: The on-device settings UI is protected by a 4-digit PIN.
+- **Proxy Auth**: Pair code exchange retrieves short-lived access and refresh tokens, verified via HMAC SHA-256 using a hardware-bound key derived from the device's ESP32 MAC address.
+- **Storage Security**: NVS credentials are XOR encoded with a key derived from `ESP.getEfuseMac()` (format: `XXXXXXXXXXXXXXXX`). Encrypted values are stored as hex strings (`token_enc`, `pair_code_enc`, etc.).
+- **Access Control**: On-device settings UI is protected by a 4-digit PIN.
+- **PIN Recovery**: If PIN is forgotten, flash firmware via USB to reset. SD card config file import also requires physical access to the device.
+
+### Token Flow
+1. Device + Pair Code → `/pair` → Access Token (short TTL) + Refresh Token
+2. Access Token expired → `/refresh` → New Access Token (using Refresh Token)
+3. Credentials stored encrypted in NVS
+
+### Why NTP is Required
+TLS certificate validation requires accurate system time. On first boot or after extended storage, the device syncs time via NTP before any HTTPS request. If time sync fails, a fallback timestamp (2025-01-01) is used, which may cause TLS verification failures for some endpoints.
+
+## API Contract
+
+The device communicates with the EC2 proxy via the following endpoints:
+
+### POST /pair
+**Purpose:** Register device and exchange pair code for tokens.
+
+**Request:**
+```json
+{
+  "deviceId": "cardputer-XXXXXXXX",
+  "pairCode": "XXXX-XXXX"
+}
+```
+
+**Response (200):**
+```json
+{
+  "accessToken": "<jwt-or-opaque-token>",
+  "refreshToken": "<opaque-token>",
+  "expiresIn": 3600
+}
+```
+
+### POST /refresh
+**Purpose:** Refresh expired access token.
+
+**Request:**
+```json
+{
+  "deviceId": "cardputer-XXXXXXXX",
+  "refreshToken": "<refresh-token>"
+}
+```
+
+**Response (200):** Same as `/pair`
+
+### GET /instances
+**Purpose:** List EC2 instances authorized for this device.
+
+**Headers:**
+- `Authorization: Bearer <access-token>`
+- `X-Device-Id: cardputer-XXXXXXXX`
+
+**Response (200):**
+```json
+{
+  "instances": [
+    {
+      "InstanceId": "i-0123456789abcdef0",
+      "Name": "web-server-prod",
+      "State": "running"
+    }
+  ]
+}
+```
+
+### POST /instances/{instanceId}/{action}
+**Purpose:** Execute action on an instance.
+
+**Actions:** `start`, `stop`, `reboot`
 
 ## Troubleshooting
 
-- **Upload Failures**: Unplug/replug the USB cable. Ensure M5Stack Cardputer drivers (USB to UART Bridge) are properly installed.
-- **Wi-Fi Issues**: Ensure you are connecting to a 2.4GHz network. The ESP32-S3 does not support 5GHz Wi-Fi.
-- **AWS Auth Failure**: Check device clock synchronization. TLS and AWS requests require accurate time via NTP. Verify your pairing code via the local web interface `/debug` endpoint.
-- **SAM CLI Missing**: Ensure `aws-sam-cli` is installed and in your system PATH. Restart PowerShell after installation.
+| Symptom | Likely Cause | Fix |
+|---------|--------------|-----|
+| Upload failures | USB cable / driver issue | Unplug/replug USB cable. Install M5Stack UART drivers. |
+| Wi-Fi won't connect | Wrong band selected | Ensure connecting to 2.4GHz network (ESP32-S3 doesn't support 5GHz) |
+| Wi-Fi won't connect | Wrong password | Press W to re-enter credentials |
+| "Clock sync failed" | NTP blocked/failed | Check internet access. Device attempts pool.ntp.org, time.google.com, time.aws.com |
+| AWS auth failure | Invalid pair code | Verify pair code via web interface `/debug` endpoint |
+| "Unauthorized" error | Tokens expired | Re-pair device via web interface, or update pair code in settings |
+| TLS errors | System time wrong | After extended storage, force NTP sync by toggling Wi-Fi |
+| SD config import fails | Wrong file format | Must be FAT32. Required file: `/ec2.conf` (see format below) |
+| SAM CLI not found | Not in PATH | Install AWS SAM CLI and restart terminal |
+
+### SD Card Configuration File Format
+The SD card must be formatted as FAT32. Place `/ec2.conf` in the root:
+```
+url=https://abc123.execute-api.region.amazonaws.com/Prod
+token_enc=<xor-hex-encoded-token>
+pair_code_enc=<xor-hex-encoded-pair-code>
+device_id=cardputer-XXXXXXXX
+```
+
+### Accessing Device Debug Info
+Navigate to `http://<device-ip>/debug` in a browser to see:
+- Wi-Fi status and IP
+- Token and pair code state
+- System clock value
+- Last EC2 error message
 
 ## Limitations
 
-- **No SSH**: SSH terminal access is NOT currently implemented.
-- **Memory Limits**: The EC2 instance list is constrained to a predefined maximum limit to save RAM.
-- **Display Constraints**: The UI displays abbreviated instance names to fit the Cardputer screen.
-- **Wi-Fi Bands**: Only supports 2.4GHz Wi-Fi.
+| Limitation | Detail |
+|------------|--------|
+| No SSH | SSH terminal access is NOT currently implemented |
+| Wi-Fi bands | Only supports 2.4GHz (ESP32-S3 hardware limitation) |
+| Instance display | Abbreviated names (max 24 chars shown on screen) |
+| Instance list | Capped at `MAX_INSTANCES` compile-time constant to conserve RAM |
+| Token storage | Credentials encoded, not encrypted — physical access to device + SD card extraction could expose data |
+| PIN storage | PIN is stored as XOR-encode, not hashed — determined attacker could recover |
 
-**Planned Features:**
-- SSH terminal access integration
-- Command relay mode
-- Full ANSI color terminal output
+## Feature Status
+
+| Feature | Status |
+|---------|--------|
+| Wi-Fi connection | ✅ Implemented |
+| EC2 instance list | ✅ Implemented |
+| Start/Stop/Reboot EC2 | ✅ Implemented |
+| Web configuration UI | ✅ Implemented |
+| SD card config import | ✅ Implemented |
+| PIN lock | ✅ Implemented |
+| SSH terminal | 🔜 Planned |
+| Command relay mode | 🔜 Planned |
+| ANSI color terminal | 🔜 Planned |
 
 ## Contributing
 
@@ -154,3 +289,5 @@ Contributions are welcome! Please adhere to standard pull request workflows and 
 ## License
 
 This project is open-source and licensed under the MIT License.
+
+

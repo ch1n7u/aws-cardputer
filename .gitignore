@@ -1,0 +1,36 @@
+# OS and editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# PlatformIO / firmware build outputs
+.pio/
+*.elf
+*.bin
+*.map
+
+# Logs
+*.log
+
+# Python virtual environments and cache
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# AWS SAM / local tooling
+.aws-sam/
+
+# Local environment and secrets
+.env
+.env.*
+*.local
+*.secret
+
+# Project-specific local config exports
+ec2.conf
